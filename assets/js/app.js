@@ -14,7 +14,8 @@
     hit: { label: 'Хит', cls: 'tag--hit' },
     new: { label: 'Новинка', cls: 'tag--new' },
     spicy: { label: 'Острое', cls: 'tag--spicy' },
-    veg: { label: 'Вегетарианское', cls: 'tag--veg' }
+    veg: { label: 'Вегетарианское', cls: 'tag--veg' },
+    kids: { label: 'Детское', cls: 'tag--kids' }
   };
 
   // ---------- Состояние ----------
@@ -51,15 +52,43 @@
         <div class="grid">${c.items.map(card).join('')}</div>
       </div>`).join('');
 
-    $$('[data-art]').forEach((el) => {
-      const it = ITEMS[el.dataset.art];
-      el.innerHTML = it.image ? `<img src="${it.image}" alt="${it.name}" loading="lazy">` : window.renderArt(it);
+    // иллюстрации рисуем, только когда карточка подъезжает к экрану
+    const artObs = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        const el = e.target, it = ITEMS[el.dataset.art];
+        el.innerHTML = it.image ? `<img src="${it.image}" alt="${it.name}" loading="lazy">` : window.renderArt(it);
+        artObs.unobserve(el);
+      });
+    }, { rootMargin: '600px 0px' });
+    $$('[data-art]').forEach((el) => artObs.observe(el));
+  }
+
+  // ---------- Поиск и фильтры ----------
+  const filter = { q: '', tag: '' };
+
+  function applyFilter() {
+    const q = filter.q.trim().toLowerCase();
+    let shown = 0;
+    $$('[data-category]').forEach((cat) => {
+      let n = 0;
+      $$('.card', cat).forEach((card) => {
+        const it = ITEMS[card.dataset.id];
+        const ok = (!q || (it.name + ' ' + it.desc).toLowerCase().includes(q)) &&
+          (!filter.tag || (it.tags || []).includes(filter.tag));
+        card.hidden = !ok;
+        if (ok) n++;
+      });
+      cat.hidden = n === 0;
+      shown += n;
     });
+    $('[data-menu-empty]').hidden = shown > 0;
+    $$('.tab').forEach((t) => { t.hidden = $('#cat-' + t.dataset.tab).hidden; });
   }
 
   function card(it) {
     const tags = (it.tags || []).map((t) => `<span class="tag ${TAGS[t].cls}">${TAGS[t].label}</span>`).join('');
-    const meta = [it.weight, it.pcs ? `${it.pcs} шт` : ''].filter(Boolean).join(' · ');
+    const meta = it.meta || '';
     return `
       <article class="card" data-id="${it.id}">
         <div class="card__media" data-art="${it.id}"></div>
@@ -127,7 +156,7 @@
         <div class="cart-item__img">${it.image ? `<img src="${it.image}" alt="">` : window.renderArt(it)}</div>
         <div class="cart-item__info">
           <span class="cart-item__name">${it.name}</span>
-          <span class="cart-item__meta">${it.weight}</span>
+          <span class="cart-item__meta">${it.meta || ''}</span>
           ${stepper(id, state.cart[id])}
         </div>
         <span class="cart-item__price">${rub(it.price * state.cart[id])}</span>
@@ -335,6 +364,13 @@
   $$('input[name="method"]').forEach((r) => r.addEventListener('change', () => {
     state.method = r.value;
     syncMethod();
+  }));
+
+  $('[data-search]').addEventListener('input', (e) => { filter.q = e.target.value; applyFilter(); });
+  $$('[data-filter]').forEach((b) => b.addEventListener('click', () => {
+    filter.tag = filter.tag === b.dataset.filter ? '' : b.dataset.filter;
+    $$('[data-filter]').forEach((x) => x.classList.toggle('is-active', x.dataset.filter === filter.tag));
+    applyFilter();
   }));
 
   const phone = $('input[name="phone"]');

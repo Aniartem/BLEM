@@ -109,6 +109,18 @@
           <p class="eyebrow">Готовим под заказ</p>
           <h2 class="section__title">Меню</h2>
         </div>
+        <div class="menu-tools">
+          <label class="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input type="search" placeholder="Найти блюдо или ингредиент" data-search aria-label="Поиск по меню">
+          </label>
+          <div class="chips" role="group" aria-label="Фильтры">
+            <button type="button" class="chip" data-filter="hit">Хиты</button>
+            <button type="button" class="chip" data-filter="new">Новинки</button>
+            <button type="button" class="chip" data-filter="spicy">Острое</button>
+            <button type="button" class="chip" data-filter="kids">Детское</button>
+          </div>
+        </div>
       </div>
       <div class="tabs-wrap">
         <div class="container">
@@ -117,6 +129,7 @@
       </div>
       <div class="container">
         <div class="menu__body" data-menu></div>
+        <p class="menu-empty" data-menu-empty hidden>Ничего не нашлось — попробуйте другое слово</p>
       </div>
     </section>
 
