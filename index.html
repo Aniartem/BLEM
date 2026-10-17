@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>РОЛЛЕВИЧ — доставка роллов в Ижевске</title>
+  <meta name="description" content="РОЛЛЕВИЧ — авторские роллы, сеты и японская кухня с доставкой по Ижевску. Свежая рыба каждый день, доставка от 60 минут.">
+  <meta name="theme-color" content="#0f0e0d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%230f0e0d'/%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23c9a45c' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='Georgia,serif' font-size='28' text-anchor='middle' fill='%23c9a45c'%3EР%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="container topbar__inner">
+      <span>Доставка по Ижевску · ежедневно 11:00 — 23:00</span>
+      <span class="topbar__accent">Бесплатно от 1 500 ₽</span>
+    </div>
+  </div>
+
+  <header class="header" id="top">
+    <div class="container header__inner">
+      <a href="#top" class="logo" aria-label="РОЛЛЕВИЧ — на главную">
+        <span class="logo__mark" aria-hidden="true">Р</span>
+        <span class="logo__text">РОЛЛЕВИЧ</span>
+      </a>
+
+      <nav class="nav" id="nav" aria-label="Основная навигация">
+        <a href="#menu">Меню</a>
+        <a href="#promo">Акции</a>
+        <a href="#delivery">Доставка</a>
+        <a href="#about">О нас</a>
+      </nav>
+
+      <div class="header__actions">
+        <a class="header__phone" href="tel:+73412000000">+7 (3412) 00-00-00</a>
+        <button class="cart-btn" type="button" data-open-cart aria-label="Открыть корзину">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 13H7L6 7Z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+          <span class="cart-btn__sum" data-cart-sum>0 ₽</span>
+          <span class="cart-btn__count" data-cart-count hidden>0</span>
+        </button>
+        <button class="burger" type="button" aria-label="Меню" aria-controls="nav" aria-expanded="false" data-burger>
+          <span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- HERO -->
+    <section class="hero">
+      <div class="container hero__inner">
+        <div class="hero__content">
+          <p class="eyebrow">Японская кухня · Ижевск</p>
+          <h1 class="hero__title">Искусство роллов<br><em>с доставкой</em> до&nbsp;двери</h1>
+          <p class="hero__lead">Свежая рыба каждое утро, рис по классической рецептуре и подача, за которую не стыдно перед гостями. Готовим под заказ и привозим за 60 минут.</p>
+          <div class="hero__cta">
+            <a href="#menu" class="btn btn--gold">Выбрать роллы</a>
+            <a href="#delivery" class="btn btn--ghost">Условия доставки</a>
+          </div>
+          <ul class="hero__facts">
+            <li><strong>60</strong><span>минут<br>доставка</span></li>
+            <li><strong>1 500 ₽</strong><span>бесплатная<br>доставка от</span></li>
+            <li><strong>24 ч</strong><span>максимум<br>для рыбы</span></li>
+          </ul>
+        </div>
+        <div class="hero__visual" aria-hidden="true">
+          <div class="hero__plate" data-hero-art></div>
+          <div class="hero__ring"></div>
+          <span class="hero__kanji">巻</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROMO -->
+    <section class="section promo" id="promo">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Предложения</p>
+          <h2 class="section__title">Акции</h2>
+        </div>
+        <div class="promo__grid">
+          <article class="promo-card promo-card--gold">
+            <span class="promo-card__tag">Промокод</span>
+            <h3>−15% на первый заказ</h3>
+            <p>Введите <b>ПЕРВЫЙ</b> в корзине — скидка применится ко всему заказу.</p>
+          </article>
+          <article class="promo-card">
+            <span class="promo-card__tag">День рождения</span>
+            <h3>Сет «Именинник» в подарок</h3>
+            <p>При заказе от 3 000 ₽ за 3 дня до и после праздника. Нужен документ.</p>
+          </article>
+          <article class="promo-card promo-card--wine">
+            <span class="promo-card__tag">Самовывоз</span>
+            <h3>−10% навынос</h3>
+            <p>Заберите заказ сами — и получите скидку. Готовим к вашему времени.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- MENU -->
+    <section class="section menu" id="menu">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Готовим под заказ</p>
+          <h2 class="section__title">Меню</h2>
+        </div>
+      </div>
+      <div class="tabs-wrap">
+        <div class="container">
+          <div class="tabs" role="tablist" data-tabs></div>
+        </div>
+      </div>
+      <div class="container">
+        <div class="menu__body" data-menu></div>
+      </div>
+    </section>
+
+    <!-- DELIVERY -->
+    <section class="section delivery" id="delivery">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Ижевск и пригород</p>
+          <h2 class="section__title">Доставка и оплата</h2>
+        </div>
+
+        <div class="delivery__grid">
+          <div class="zones">
+            <div class="zone">
+              <span class="zone__dot zone__dot--1"></span>
+              <div>
+                <h3>Зона 1 · Центр</h3>
+                <p>Октябрьский, Ленинский, Первомайский районы</p>
+              </div>
+              <dl><dt>от</dt><dd>40 мин</dd><dt>мин. заказ</dt><dd>900 ₽</dd></dl>
+            </div>
+            <div class="zone">
+              <span class="zone__dot zone__dot--2"></span>
+              <div>
+                <h3>Зона 2 · Город</h3>
+                <p>Индустриальный, Устиновский районы</p>
+              </div>
+              <dl><dt>от</dt><dd>60 мин</dd><dt>мин. заказ</dt><dd>1 200 ₽</dd></dl>
+            </div>
+            <div class="zone">
+              <span class="zone__dot zone__dot--3"></span>
+              <div>
+                <h3>Зона 3 · Пригород</h3>
+                <p>Октябрьский посёлок, Завьялово, Хохряки, Ягул</p>
+              </div>
+              <dl><dt>от</dt><dd>80 мин</dd><dt>мин. заказ</dt><dd>2 000 ₽</dd></dl>
+            </div>
+          </div>
+
+          <div class="delivery__info">
+            <div class="info-card">
+              <h3>Стоимость</h3>
+              <p>Доставка — 200 ₽. От 1 500 ₽ по городу — бесплатно.</p>
+            </div>
+            <div class="info-card">
+              <h3>Оплата</h3>
+              <p>Картой или наличными курьеру, СБП, онлайн на сайте.</p>
+            </div>
+            <div class="info-card">
+              <h3>Упаковка</h3>
+              <p>Фирменные коробки с термосумкой — роллы приезжают как с кухни.</p>
+            </div>
+            <div class="info-card">
+              <h3>Предзаказ</h3>
+              <p>Принимаем заказы на конкретное время, в том числе на завтра.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section class="section about" id="about">
+      <div class="container about__inner">
+        <div class="about__text">
+          <p class="eyebrow">О нас</p>
+          <h2 class="section__title">Роллы, которые хочется<br><em>заказать снова</em></h2>
+          <p>РОЛЛЕВИЧ — новая доставка японской кухни в Ижевске. Мы начинаем с нуля и с одной идеи: роллы могут быть не фастфудом, а маленьким праздником, который привозят домой.</p>
+          <p>Работаем с охлаждённой рыбой, а не размороженной. Рис варим небольшими партиями в течение дня. Каждый ролл собирает повар, а не конвейер.</p>
+        </div>
+        <ul class="values">
+          <li><span>01</span><h3>Свежесть</h3><p>Лосось и тунец поступают охлаждёнными. Всё, что не продано за сутки, списываем.</p></li>
+          <li><span>02</span><h3>Честный вес</h3><p>Указываем вес и количество кусочков — без «воздуха» и лишнего риса.</p></li>
+          <li><span>03</span><h3>Аккуратность</h3><p>Каждый заказ упакован так, чтобы его можно было сразу подать на стол.</p></li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a href="#top" class="logo">
+          <span class="logo__mark" aria-hidden="true">Р</span>
+          <span class="logo__text">РОЛЛЕВИЧ</span>
+        </a>
+        <p>Доставка роллов и японской кухни в Ижевске.</p>
+      </div>
+      <div class="footer__col">
+        <h4>Контакты</h4>
+        <a href="tel:+73412000000">+7 (3412) 00-00-00</a>
+        <a href="mailto:hello@rollevich.ru">hello@rollevich.ru</a>
+        <span>Ижевск, Удмуртская Республика</span>
+      </div>
+      <div class="footer__col">
+        <h4>Режим работы</h4>
+        <span>Ежедневно 11:00 — 23:00</span>
+        <span>Приём заказов до 22:30</span>
+      </div>
+      <div class="footer__col">
+        <h4>Мы в сети</h4>
+        <a href="#" rel="noopener">ВКонтакте</a>
+        <a href="#" rel="noopener">Telegram</a>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© <span data-year></span> РОЛЛЕВИЧ</span>
+      <span>Изображения блюд носят иллюстративный характер</span>
+    </div>
+  </footer>
+
+  <!-- Плавающая кнопка корзины (мобильные) -->
+  <button class="cart-float" type="button" data-open-cart hidden>
+    <span>Корзина · <b data-cart-count-text>0</b></span>
+    <b data-cart-sum>0 ₽</b>
+  </button>
+
+  <!-- CART DRAWER -->
+  <div class="overlay" data-overlay hidden></div>
+  <aside class="drawer" data-drawer aria-hidden="true" aria-label="Корзина">
+    <div class="drawer__head">
+      <h2>Ваш заказ</h2>
+      <button class="icon-btn" type="button" data-close-cart aria-label="Закрыть">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <div class="drawer__body">
+      <div class="cart-empty" data-cart-empty>
+        <p>Корзина пока пуста</p>
+        <button class="btn btn--ghost" type="button" data-close-cart>Перейти в меню</button>
+      </div>
+
+      <ul class="cart-list" data-cart-list></ul>
+
+      <div class="cart-extra" data-cart-extra hidden>
+        <div class="progress" data-progress>
+          <p data-progress-text></p>
+          <div class="progress__bar"><span data-progress-bar></span></div>
+        </div>
+
+        <form class="promo-form" data-promo-form>
+          <input type="text" name="code" placeholder="Промокод" autocomplete="off">
+          <button type="submit" class="btn btn--small">Применить</button>
+        </form>
+        <p class="promo-msg" data-promo-msg></p>
+
+        <form class="checkout" data-checkout novalidate>
+          <div class="segmented" role="radiogroup">
+            <label><input type="radio" name="method" value="delivery" checked><span>Доставка</span></label>
+            <label><input type="radio" name="method" value="pickup"><span>Самовывоз −10%</span></label>
+          </div>
+          <label class="field"><span>Имя</span><input name="name" required autocomplete="name"></label>
+          <label class="field"><span>Телефон</span><input name="phone" type="tel" required autocomplete="tel" placeholder="+7 (___) ___-__-__"></label>
+          <label class="field" data-address-field><span>Адрес</span><input name="address" autocomplete="street-address" placeholder="Улица, дом, квартира"></label>
+          <div class="field-row">
+            <label class="field"><span>Персон</span><input name="persons" type="number" min="1" max="20" value="2"></label>
+            <label class="field"><span>Время</span>
+              <select name="time"><option>Как можно скорее</option></select>
+            </label>
+          </div>
+          <label class="field"><span>Оплата</span>
+            <select name="payment">
+              <option>Картой курьеру</option>
+              <option>СБП</option>
+              <option>Наличными</option>
+            </select>
+          </label>
+          <label class="field"><span>Комментарий</span><textarea name="comment" rows="2" placeholder="Домофон, этаж, пожелания"></textarea></label>
+        </form>
+      </div>
+    </div>
+
+    <div class="drawer__foot" data-cart-foot hidden>
+      <dl class="totals">
+        <div><dt>Блюда</dt><dd data-t-subtotal></dd></div>
+        <div data-t-discount-row hidden><dt>Скидка</dt><dd data-t-discount></dd></div>
+        <div><dt>Доставка</dt><dd data-t-delivery></dd></div>
+        <div class="totals__sum"><dt>Итого</dt><dd data-t-total></dd></div>
+      </dl>
+      <button class="btn btn--gold btn--block" type="button" data-submit-order>Оформить заказ</button>
+      <p class="form-error" data-form-error></p>
+    </div>
+  </aside>
+
+  <!-- SUCCESS MODAL -->
+  <div class="modal" data-modal hidden>
+    <div class="modal__box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <span class="modal__mark">✓</span>
+      <h2 id="modal-title">Спасибо за заказ!</h2>
+      <p data-modal-text>Мы перезвоним в течение 5 минут, чтобы подтвердить заказ.</p>
+      <button class="btn btn--gold" type="button" data-close-modal>Хорошо</button>
+    </div>
+  </div>
+
+  <div class="toast" data-toast></div>
+
+  <script src="assets/js/menu.js"></script>
+  <script src="assets/js/art.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
