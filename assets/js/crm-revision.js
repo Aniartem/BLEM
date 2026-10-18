@@ -93,7 +93,7 @@
         <div class="chips" role="tablist">${[['all', 'Все'], ['left', 'Не посчитано']].map(([id, t]) => `<button type="button" class="chip ${R.filter === id ? 'is-on' : ''}" data-rev-filter="${id}">${t}</button>`).join('')}</div>
       </div>
       <div data-rev-list>${listHTML()}</div>
-      <div class="ext-card">
+      <div class="ext-card" data-rev-close>
         ${manager ? closeHTML(c) : '<p>Когда всё посчитаете, управляющий проверит расхождения и проведёт ревизию. Ошиблись — просто впишите правильную цифру.</p>'}
       </div>`;
   }
@@ -109,19 +109,13 @@
   }
 
   function rowHTML(p) {
+    // в списке — только факт: учёт и расхождения управляющий видит ниже, в блоке «Расхождения»
     const c = R.data.current.counts[p.id];
-    const manager = CRM.isManager();
-    let aside = '';
-    if (manager && c) {
-      const diff = Math.round((c.qty - p.qty) * 1000) / 1000;
-      const money = diff * p.avgPrice;
-      aside = `<b class="${diff < 0 ? 'neg' : diff > 0 ? 'pos' : ''}">${diff === 0 ? 'сходится' : (diff > 0 ? '+' : '') + qtyText(diff) + ' ' + esc(p.unit)}</b><small>${money ? (money < 0 ? '−' : '+') + rub(Math.abs(money)) : ''}</small>`;
-    }
     const who = c ? `${esc(c.by)} · ${hhmm(c.at)}` : 'не посчитано';
     return `
       <div class="list-row inv-row rev-row ${c ? 'is-counted' : ''}" data-rev-row="${p.id}">
-        <span class="list-row__main"><b>${esc(p.name)}</b><small>${c ? '✓ ' : ''}${who}${manager ? ` · по учёту ${qtyText(p.qty)} ${esc(p.unit)}` : ''}</small></span>
-        <span class="list-row__aside">${aside}</span>
+        <span class="list-row__main"><b>${esc(p.name)}</b><small>${c ? '✓ ' : ''}${who}</small></span>
+        <span class="list-row__aside"></span>
         <label class="line__qty inv-input"><input data-rev-input="${p.id}" value="${c ? qtyText(c.qty) : ''}" inputmode="decimal" placeholder="Сколько" aria-label="Сколько есть: ${esc(p.name)}" autocomplete="off" enterkeyhint="next"><span data-unit>${esc(p.unit)}</span></label>
       </div>`;
   }
@@ -140,9 +134,25 @@
         <div class="ext-row"><button type="button" class="crm-btn crm-btn--danger" data-rev-cancel-yes>Да, отменить</button><button type="button" class="crm-btn crm-btn--ghost" data-rev-confirm="">Нет</button></div>`;
     }
     return `
+      ${diffsHTML(c)}
       <p>Остатки склада станут такими, как посчитано. Непосчитанные позиции не меняются. Проводите сразу после пересчёта, пока не ушли новые заказы.</p>
       <button type="button" class="crm-btn crm-btn--block" data-rev-confirm="close" ${c.counted ? '' : 'disabled'}>Провести ревизию</button>
       <div><button type="button" class="crm-btn crm-btn--link crm-btn--danger-text" data-rev-confirm="cancel">Отменить ревизию</button></div>`;
+  }
+
+  // учёт → факт по посчитанным позициям, самые дорогие расхождения сверху
+  function diffsHTML(c) {
+    if (!c.counted) return '<h3>Расхождения</h3><p>Появятся, когда начнут вписывать остатки.</p>';
+    const rows = R.data.products.filter((p) => c.counts[p.id]).map((p) => {
+      const diff = Math.round((c.counts[p.id].qty - p.qty) * 1000) / 1000;
+      return { p, diff, money: diff * p.avgPrice };
+    }).filter((r) => r.diff !== 0).sort((a, b) => Math.abs(b.money) - Math.abs(a.money));
+    if (!rows.length) return '<h3>Расхождения</h3><p>Всё посчитанное сходится с учётом.</p>';
+    return `
+      <h3>Расхождения</h3>
+      <div class="list-sub">${rows.map(({ p, diff, money }) => `
+        <div><span>${esc(p.name)}<br><small>учёт ${qtyText(p.qty)} → факт ${qtyText(c.counts[p.id].qty)} ${esc(p.unit)}</small></span>
+        <b class="${diff < 0 ? 'neg' : 'pos'}">${diff > 0 ? '+' : ''}${qtyText(diff)} ${esc(p.unit)}${money ? `<br><small>${money < 0 ? '−' : '+'}${rub(Math.abs(money))}</small>` : ''}</b></div>`).join('')}</div>`;
   }
 
   // ---------- Прошлые ревизии ----------
@@ -189,6 +199,8 @@
       if (CRM.isManager()) await load(); // пересчитать «пока выходит» по ценам склада
       const head = box.querySelector('.rev-head');
       if (head && R.data.current) head.outerHTML = headHTML(R.data.current);
+      const closeCard = box.querySelector('[data-rev-close]');
+      if (closeCard && R.data.current && CRM.isManager() && !R.confirm) closeCard.innerHTML = closeHTML(R.data.current);
     } catch (e) {
       CRM.toast(errText(e));
       if (e && /завершена/.test(e.message)) { await load(); paint(box); }
