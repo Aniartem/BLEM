@@ -72,6 +72,7 @@ window.RollevichStore = (function () {
         const r = await req('POST', '/api/orders', order);
         return { number: r.number, total: r.total };
       },
+      async createStaff(order) { return (await req('POST', '/api/staff/orders', order)).order; },
       async setStatus(order, status) { return (await req('PATCH', '/api/orders/' + encodeURIComponent(order.id), { status })).order; },
       async me() {
         try { return (await req('GET', '/api/me')).user; } catch (e) { if (e.code === 'unauthorized') return null; throw e; }
@@ -112,6 +113,7 @@ window.RollevichStore = (function () {
     };
     const create = b.create;
     b.create = async (order) => { await create(order); return { number: order.number, total: order.total }; };
+    b.createStaff = async (order) => { await create(order); return order; };
     return b;
   }
 
@@ -155,6 +157,7 @@ window.RollevichStore = (function () {
     newId,
     newNumber,
     async create(order) { return (await backend()).create(order); },
+    async createStaff(order) { return (await backend()).createStaff(order); },
     async setStatus(order, status, by) { return (await backend()).setStatus(order, status, by); },
     async me() { const b = await backend(); return b.me ? b.me() : null; },
     async login(login, password) { return (await backend()).login(login, password); },

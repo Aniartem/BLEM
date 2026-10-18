@@ -22,7 +22,8 @@ class OrderError extends Error {
 const str = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
 
 // Разбирает заказ из формы сайта и считает суммы. Бросает OrderError с понятным текстом.
-function priceOrder(input, { items, config }) {
+// staff: заказ оформляет оператор по телефону — минимальная сумма доставки не обязательна
+function priceOrder(input, { items, config }, { staff = false } = {}) {
   if (!input || typeof input !== 'object') throw new OrderError('Пустой заказ');
 
   const name = str(input.name, 80);
@@ -54,7 +55,7 @@ function priceOrder(input, { items, config }) {
   if (method === 'pickup') rate = Math.max(rate, config.pickupDiscount || 0);
   const discount = Math.round(subtotal * rate);
   const delivery = method === 'pickup' || subtotal >= config.freeDeliveryFrom ? 0 : config.deliveryPrice;
-  if (method === 'delivery' && subtotal < config.minOrder) {
+  if (!staff && method === 'delivery' && subtotal < config.minOrder) {
     throw new OrderError(`Минимальная сумма доставки — ${config.minOrder} ₽`);
   }
 

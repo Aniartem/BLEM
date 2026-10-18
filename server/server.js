@@ -168,6 +168,30 @@ function createApp(cfg, { log = console } = {}) {
       send(res, 201, { id: order.id, number: order.number, total: order.total });
     },
 
+    // Заказ, принятый оператором по телефону: без лимита частоты, сразу со статусом и автором
+    'POST /api/staff/orders': async (req, res) => {
+      const user = staff(req, res);
+      if (!user) return;
+      if (!sameOrigin(req)) return send(res, 403, { error: 'Запрос с чужого сайта' });
+      const body = await readJson(req);
+      let priced;
+      try { priced = priceOrder(body, menu, { staff: true }); } catch (e) {
+        if (e instanceof OrderError) return send(res, 422, { error: e.message, field: e.field });
+        throw e;
+      }
+      const now = Date.now();
+      const history = [{ status: 'new', at: now, by: user.name }];
+      if (body.accepted) history.push({ status: 'accepted', at: now, by: user.name });
+      const order = db.createOrder({
+        id: crypto.randomUUID(), createdAt: now, status: body.accepted ? 'accepted' : 'new', history,
+        source: 'phone', createdBy: user.name, ...priced
+      });
+      log.log(`[order] № ${order.number} по телефону (${user.name}) на ${order.total} ₽`);
+      broadcast(order);
+      tg.notifyNew(order).catch(() => {});
+      send(res, 201, { order });
+    },
+
     'POST /api/login': async (req, res) => {
       if (!sameOrigin(req)) return send(res, 403, { error: 'Запрос с чужого сайта' });
       if (!loginByIp(ip(req))) return send(res, 429, { error: 'Слишком много попыток входа. Подождите 15 минут.' });

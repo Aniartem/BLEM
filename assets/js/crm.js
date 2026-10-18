@@ -81,6 +81,7 @@
         <div class="crm-tools">
           <label class="crm-search"><input id="crm-search" type="search" placeholder="№, имя или телефон" data-q></label>
           <button type="button" class="crm-btn crm-btn--ghost" data-sound aria-pressed="false">Звук</button>
+          <button type="button" class="crm-btn" data-compose-open>+ Новый заказ</button>
           <a class="crm-btn crm-btn--ghost" data-to-site href="#">На сайт</a>
           <span class="crm-user" data-user hidden></span>
         </div>
@@ -90,6 +91,7 @@
       <main class="crm-main" data-main></main>
       <div class="crm-overlay" data-overlay hidden></div>
       <aside class="crm-drawer" data-drawer aria-hidden="true"></aside>
+      <div class="crm-compose" data-compose hidden></div>
       <div class="crm-toast" data-toast></div>
     </div>`;
   const $ = (s) => root.querySelector(s);
@@ -132,7 +134,7 @@
           <b class="ocard__num">№ ${esc(o.number)}</b>
           <span class="ocard__time" title="${esc(dateShort(o.createdAt))}">${hhmm(o.createdAt)} · ${ago(o.createdAt)}</span>
         </div>
-        <div class="ocard__who">${esc(o.name)} <span>${esc(o.phone)}</span></div>
+        <div class="ocard__who">${o.source === 'phone' ? '<span class="pill pill--phone">Телефон</span> ' : ''}${esc(o.name)} <span>${esc(o.phone)}</span></div>
         <div class="ocard__where">${o.method === 'pickup' ? '<span class="pill pill--pickup">Самовывоз</span>' : esc(o.address)}</div>
         ${o.time && o.time !== 'Как можно скорее' ? `<div class="ocard__when">${esc(o.time)}</div>` : ''}
         <div class="ocard__items">${esc(itemsLine(o))}</div>
@@ -244,7 +246,7 @@
     const open = !!(state.openId || state.openClient);
     d.classList.toggle('is-open', open);
     d.setAttribute('aria-hidden', String(!open));
-    $('[data-overlay]').hidden = !open;
+    $('[data-overlay]').hidden = !open && !draft;
     if (state.openClient) { d.innerHTML = clientHTML(state.openClient); return; }
     const o = state.openId && byId(state.openId);
     if (!o) { d.innerHTML = ''; return; }
@@ -260,6 +262,7 @@
       <div class="dr-body">
         <div class="dr-block">
           <div class="kv"><span>Клиент</span><b>${esc(o.name)}</b></div>
+          <div class="kv"><span>Откуда</span><b>${o.source === 'phone' ? 'Телефон' + (o.createdBy ? ' · принял ' + esc(o.createdBy) : '') : 'Сайт'}</b></div>
           <div class="kv"><span>Телефон</span><b class="sel">${esc(o.phone)}</b><button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-copy="${esc(o.phone)}">Копировать</button></div>
           <div class="kv"><span>${o.method === 'pickup' ? 'Получение' : 'Адрес'}</span><b>${o.method === 'pickup' ? 'Самовывоз' : esc(o.address)}</b></div>
           <div class="kv"><span>Время</span><b>${esc(o.time || 'Как можно скорее')}</b></div>
@@ -279,6 +282,7 @@
       </div>
       <div class="dr-foot">
         ${st.next ? `<button type="button" class="crm-btn crm-btn--block" data-advance="${esc(o.id)}">${st.next} →</button>` : ''}
+        <button type="button" class="crm-btn crm-btn--ghost" data-repeat="${esc(o.id)}">Повторить заказ по телефону</button>
         <div class="dr-row">
           <label class="dr-select"><span>Статус</span><select id="crm-status-select" data-set-status="${esc(o.id)}">${options}</select></label>
           ${o.status !== 'cancelled' && o.status !== 'done'
@@ -308,6 +312,7 @@
         </div>
         ${c.fav ? `<div class="kv"><span>Любимое</span><b>${esc(c.fav)}</b></div>` : ''}
         ${c.addresses.size ? `<div class="kv"><span>Адреса</span><b>${[...c.addresses].map(esc).join('<br>')}</b></div>` : ''}
+        <button type="button" class="crm-btn" data-compose-for="${esc(c.key)}">+ Новый заказ для клиента</button>
         <h4>Заказы</h4>
         <table class="tbl"><tbody>${rows}</tbody></table>
       </div>`;
@@ -427,6 +432,280 @@
     } catch (e) { /* звук недоступен */ }
   }
 
+  // ---------- Новый заказ по телефону ----------
+  const CFG = window.ROLLEVICH_CONFIG || { deliveryPrice: 200, freeDeliveryFrom: 1500, minOrder: 900, pickupDiscount: 0.1, promoCodes: {}, openHour: 11, closeHour: 23 };
+  const ITEMS = new Map(MENU.flatMap((c) => c.items).map((it) => [it.id, it]));
+  const cz = $('[data-compose]');
+  let draft = null;
+
+  function formatPhone(v) {
+    let d = digits(v);
+    if (!d) return '';
+    if (d[0] === '8') d = '7' + d.slice(1);
+    if (d[0] !== '7') d = '7' + d;
+    d = d.slice(0, 11);
+    const p = [d.slice(1, 4), d.slice(4, 7), d.slice(7, 9), d.slice(9, 11)];
+    let out = '+7';
+    if (p[0]) out += ' (' + p[0];
+    if (p[0].length === 3) out += ')';
+    if (p[1]) out += ' ' + p[1];
+    if (p[2]) out += '-' + p[2];
+    if (p[3]) out += '-' + p[3];
+    return out;
+  }
+
+  function timeOptions() {
+    const opts = ['Как можно скорее'];
+    const now = new Date();
+    const start = new Date(now.getTime() + 60 * 60000);
+    start.setMinutes(Math.ceil(start.getMinutes() / 30) * 30, 0, 0);
+    const end = new Date(now); end.setHours(CFG.closeHour, 0, 0, 0);
+    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 30 * 60000)) {
+      if (d.getHours() >= CFG.openHour) opts.push(`Сегодня к ${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    }
+    for (let h = CFG.openHour + 1; h < CFG.closeHour; h++) opts.push(`Завтра к ${h}:00`);
+    return opts;
+  }
+
+  // Те же правила, что у сайта и сервера (menu.js → ROLLEVICH_CONFIG)
+  function draftTotals() {
+    const lines = Object.entries(draft.items).filter(([id]) => ITEMS.has(id))
+      .map(([id, qty]) => ({ id, name: ITEMS.get(id).name, qty, price: ITEMS.get(id).price }));
+    const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
+    const promo = draft.promo.trim().toUpperCase();
+    let rate = CFG.promoCodes[promo] || 0;
+    if (draft.method === 'pickup') rate = Math.max(rate, CFG.pickupDiscount);
+    const discount = Math.round(subtotal * rate);
+    const delivery = draft.method === 'pickup' || subtotal === 0 || subtotal >= CFG.freeDeliveryFrom ? 0 : CFG.deliveryPrice;
+    return { lines, subtotal, discount, delivery, total: subtotal - discount + delivery, promoOk: !!CFG.promoCodes[promo] };
+  }
+
+  function openCompose(prefill = {}) {
+    draft = {
+      phone: '', name: '', method: 'delivery', address: '', persons: 2, time: 'Как можно скорее',
+      payment: 'Картой курьеру', comment: '', promo: '', items: {}, accepted: true, q: '', cat: 'all', error: '', sending: false,
+      ...prefill
+    };
+    state.openId = null;
+    state.openClient = null;
+    renderDrawer();
+    const cats = MENU.map((c) => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');
+    cz.innerHTML = `
+      <div class="cz-head">
+        <h2>Новый заказ по телефону</h2>
+        <button type="button" class="crm-x" data-compose-close aria-label="Закрыть">×</button>
+      </div>
+      <div class="cz-body">
+        <section class="cz-menu">
+          <div class="cz-menu__tools">
+            <input id="cz-q" type="search" placeholder="Блюдо или ингредиент" data-cz="q" autocomplete="off">
+            <select id="cz-cat" data-cz="cat"><option value="all">Все разделы</option><option value="hits">Хиты</option>${cats}</select>
+          </div>
+          <div class="cz-list" data-cz-list></div>
+        </section>
+        <section class="cz-form">
+          <div class="cz-grid">
+            <label class="cz-f"><span>Телефон</span><input id="cz-phone" type="tel" data-cz="phone" placeholder="+7 (___) ___-__-__" autocomplete="off"></label>
+            <label class="cz-f"><span>Имя</span><input id="cz-name" data-cz="name" autocomplete="off"></label>
+          </div>
+          <div class="cz-client" data-cz-client hidden></div>
+          <div class="cz-seg" role="radiogroup" aria-label="Получение">
+            <label><input type="radio" name="cz-method" value="delivery" data-cz="method"><span>Доставка</span></label>
+            <label><input type="radio" name="cz-method" value="pickup" data-cz="method"><span>Самовывоз −${Math.round(CFG.pickupDiscount * 100)}%</span></label>
+          </div>
+          <label class="cz-f" data-cz-address><span>Адрес</span><input id="cz-address" data-cz="address" placeholder="Улица, дом, квартира, подъезд" autocomplete="off"></label>
+          <div class="cz-grid cz-grid--3">
+            <label class="cz-f"><span>Время</span><select id="cz-time" data-cz="time">${timeOptions().map((t) => `<option>${esc(t)}</option>`).join('')}</select></label>
+            <label class="cz-f"><span>Оплата</span><select id="cz-payment" data-cz="payment"><option>Картой курьеру</option><option>СБП</option><option>Наличными</option></select></label>
+            <label class="cz-f"><span>Персон</span><input id="cz-persons" type="number" min="1" max="20" data-cz="persons"></label>
+          </div>
+          <div class="cz-grid">
+            <label class="cz-f"><span>Комментарий</span><input id="cz-comment" data-cz="comment" placeholder="Домофон, этаж, пожелания" autocomplete="off"></label>
+            <label class="cz-f"><span>Промокод</span><input id="cz-promo" data-cz="promo" autocomplete="off"></label>
+          </div>
+          <div class="cz-cart" data-cz-cart></div>
+          <label class="cz-check"><input id="cz-accepted" type="checkbox" data-cz="accepted"> Клиент подтвердил заказ — сразу в «Приняты»</label>
+          <p class="cz-err" data-cz-err></p>
+          <button type="button" class="crm-btn crm-btn--block" data-cz-submit>Создать заказ</button>
+        </section>
+      </div>`;
+    ['phone', 'name', 'address', 'time', 'payment', 'persons', 'comment', 'promo'].forEach((k) => {
+      const el = cz.querySelector(`[data-cz="${k}"]`);
+      if (k === 'time' && ![...el.options].some((o) => o.value === draft.time)) el.add(new Option(draft.time, draft.time, true, true));
+      el.value = draft[k];
+    });
+    cz.querySelector(`[data-cz="method"][value="${draft.method}"]`).checked = true;
+    cz.querySelector('[data-cz="accepted"]').checked = draft.accepted;
+    cz.hidden = false;
+    $('[data-overlay]').hidden = false;
+    renderComposeList();
+    renderComposeSide();
+    cz.querySelector(draft.phone ? '#cz-q' : '#cz-phone').focus();
+  }
+
+  function closeCompose() {
+    draft = null;
+    cz.hidden = true;
+    cz.innerHTML = '';
+    $('[data-overlay]').hidden = !(state.openId || state.openClient);
+  }
+
+  function renderComposeList() {
+    const q = draft.q.trim().toLowerCase();
+    const list = MENU.flatMap((c) => c.items.map((it) => ({ it, cat: c.id })))
+      .filter(({ it, cat }) => (draft.cat === 'all' || (draft.cat === 'hits' ? (it.tags || []).includes('hit') : cat === draft.cat)) &&
+        (!q || (it.name + ' ' + it.desc).toLowerCase().includes(q)))
+      .slice(0, 120);
+    cz.querySelector('[data-cz-list]').innerHTML = list.map(({ it }) => {
+      const qty = draft.items[it.id] || 0;
+      return `
+        <div class="cz-row ${qty ? 'is-in' : ''}">
+          <div class="cz-row__info"><b>${esc(it.name)}</b><span>${esc([it.meta, it.desc].filter(Boolean).join(' · '))}</span></div>
+          <span class="cz-row__price">${rub(it.price)}</span>
+          ${qty
+            ? `<div class="cz-step"><button type="button" data-cz-dec="${esc(it.id)}" aria-label="Убрать одну">−</button><span>${qty}</span><button type="button" data-cz-inc="${esc(it.id)}" aria-label="Добавить ещё">+</button></div>`
+            : `<button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-cz-inc="${esc(it.id)}">Добавить</button>`}
+        </div>`;
+    }).join('') || '<p class="col__empty">Ничего не нашлось</p>';
+  }
+
+  function findClient(phone) {
+    const d = digits(phone);
+    return d.length === 11 ? clients().find((c) => c.key === d) : null;
+  }
+
+  function renderComposeSide() {
+    const t = draftTotals();
+    cz.querySelector('[data-cz-address]').hidden = draft.method === 'pickup';
+    const c = findClient(draft.phone);
+    const box = cz.querySelector('[data-cz-client]');
+    box.hidden = !c;
+    if (c) {
+      const last = c.orders[c.orders.length - 1];
+      box.innerHTML = `
+        <div><b>${esc(c.name)}</b> — ${c.count ? plural(c.count, 'заказ', 'заказа', 'заказов') + ' на ' + rub(c.spent) : 'новый клиент'}${c.fav ? `, любит «${esc(c.fav)}»` : ''}</div>
+        <div class="cz-client__actions">
+          ${!draft.name || (last.address && !draft.address) ? `<button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-cz-fill="${esc(c.key)}">Подставить имя и адрес</button>` : ''}
+          <button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-repeat="${esc(last.id)}">Повторить последний № ${esc(last.number)} (${rub(last.total)})</button>
+        </div>`;
+    }
+    const rows = t.lines.map((l) => `<tr><td>${esc(l.name)}</td><td class="r">${l.qty} × ${rub(l.price)}</td><td class="r">${rub(l.price * l.qty)}</td><td><button type="button" class="cz-del" data-cz-del="${esc(l.id)}" aria-label="Убрать ${esc(l.name)}">×</button></td></tr>`).join('');
+    const below = draft.method === 'delivery' && t.subtotal > 0 && t.subtotal < CFG.minOrder;
+    cz.querySelector('[data-cz-cart]').innerHTML = t.lines.length ? `
+      <table class="tbl"><tbody>${rows}</tbody></table>
+      <dl class="dr-totals">
+        <div><dt>Блюда</dt><dd>${rub(t.subtotal)}</dd></div>
+        ${t.discount ? `<div><dt>Скидка${t.promoOk ? ' · ' + esc(draft.promo.toUpperCase()) : ' · самовывоз'}</dt><dd>−${rub(t.discount)}</dd></div>` : ''}
+        <div><dt>Доставка</dt><dd>${draft.method === 'pickup' ? '—' : t.delivery ? rub(t.delivery) : 'бесплатно'}</dd></div>
+        <div class="sum"><dt>Итого</dt><dd>${rub(t.total)}</dd></div>
+      </dl>
+      ${below ? `<p class="cz-warn">Меньше минимальной суммы доставки (${rub(CFG.minOrder)}). Оформить можно, но проверьте с клиентом.</p>` : ''}
+      ${draft.promo && !t.promoOk ? '<p class="cz-warn">Такого промокода нет — скидка не применена.</p>' : ''}`
+      : '<p class="cz-empty">Добавьте блюда из меню слева</p>';
+    const btn = cz.querySelector('[data-cz-submit]');
+    btn.textContent = draft.sending ? 'Создаём…' : t.lines.length ? `Создать заказ на ${rub(t.total)}` : 'Создать заказ';
+    btn.disabled = draft.sending;
+    cz.querySelector('[data-cz-err]').textContent = draft.error;
+  }
+
+  function setQty(id, delta) {
+    const q = (draft.items[id] || 0) + delta;
+    if (q <= 0) delete draft.items[id]; else draft.items[id] = Math.min(q, 99);
+    renderComposeList();
+    renderComposeSide();
+  }
+
+  function prefillFrom(order) {
+    const items = {};
+    (order.items || []).forEach((i) => { if (ITEMS.has(i.id)) items[i.id] = i.qty; });
+    return { phone: order.phone, name: order.name, method: order.method, address: order.address || '', persons: order.persons || 2, payment: order.payment || 'Картой курьеру', items };
+  }
+
+  async function submitCompose() {
+    const t = draftTotals();
+    const problems = [];
+    if (digits(draft.phone).length !== 11) problems.push('телефон');
+    if (!draft.name.trim()) problems.push('имя');
+    if (draft.method === 'delivery' && !draft.address.trim()) problems.push('адрес');
+    if (!t.lines.length) problems.push('блюда');
+    if (problems.length) { draft.error = 'Заполните: ' + problems.join(', '); renderComposeSide(); return; }
+
+    const now = Date.now();
+    const by = state.user ? state.user.name : 'Оператор';
+    const history = [{ status: 'new', at: now, by }];
+    if (draft.accepted) history.push({ status: 'accepted', at: now, by });
+    const order = {
+      id: Store.newId(), number: Store.newNumber(), createdAt: now, status: draft.accepted ? 'accepted' : 'new', history,
+      source: 'phone', createdBy: by, accepted: draft.accepted,
+      name: draft.name.trim(), phone: formatPhone(draft.phone), method: draft.method,
+      address: draft.method === 'delivery' ? draft.address.trim() : '', persons: Number(draft.persons) || 1,
+      time: draft.time, payment: draft.payment, comment: draft.comment.trim(),
+      promo: t.promoOk ? draft.promo.trim().toUpperCase() : '',
+      items: t.lines, subtotal: t.subtotal, discount: t.discount, delivery: t.delivery, total: t.total
+    };
+    draft.sending = true;
+    draft.error = '';
+    renderComposeSide();
+    try {
+      const saved = await Store.createStaff(order);
+      closeCompose();
+      toast(`Заказ № ${saved.number} создан на ${rub(saved.total)}`);
+    } catch (e) {
+      draft.sending = false;
+      draft.error = e && e.message ? e.message : 'Не удалось создать заказ. Проверьте интернет и повторите.';
+      renderComposeSide();
+    }
+  }
+
+  cz.addEventListener('input', (e) => {
+    const k = e.target.dataset.cz;
+    if (!k || !draft) return;
+    if (k === 'phone') {
+      e.target.value = formatPhone(e.target.value);
+      draft.phone = e.target.value;
+      const c = findClient(draft.phone);
+      if (c && !draft.name) { draft.name = c.name; cz.querySelector('#cz-name').value = c.name; }
+      renderComposeSide();
+      return;
+    }
+    if (k === 'accepted') { draft.accepted = e.target.checked; return; }
+    draft[k] = e.target.value;
+    if (k === 'q' || k === 'cat') renderComposeList();
+    else if (k === 'method' || k === 'promo') renderComposeSide();
+  });
+  cz.addEventListener('change', (e) => {
+    const k = e.target.dataset.cz;
+    if (!draft || !k) return;
+    if (k === 'accepted') draft.accepted = e.target.checked;
+    else if (k === 'method') { draft.method = e.target.value; renderComposeSide(); }
+    else if (k === 'cat') { draft.cat = e.target.value; renderComposeList(); }
+    else draft[k] = e.target.value;
+  });
+  cz.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t || !draft) return;
+    e.stopPropagation();
+    if (t.hasAttribute('data-compose-close')) return closeCompose();
+    if (t.dataset.czInc) return setQty(t.dataset.czInc, 1);
+    if (t.dataset.czDec) return setQty(t.dataset.czDec, -1);
+    if (t.dataset.czDel) { delete draft.items[t.dataset.czDel]; renderComposeList(); renderComposeSide(); return; }
+    if (t.hasAttribute('data-cz-submit')) return submitCompose();
+    if (t.dataset.czFill) {
+      const c = clients().find((x) => x.key === t.dataset.czFill);
+      const last = c && c.orders[c.orders.length - 1];
+      if (!c) return;
+      draft.name = c.name;
+      cz.querySelector('#cz-name').value = c.name;
+      if (last.address) { draft.address = last.address; cz.querySelector('#cz-address').value = last.address; }
+      renderComposeSide();
+      return;
+    }
+    if (t.dataset.repeat) {
+      const o = byId(t.dataset.repeat);
+      if (o) openCompose({ ...prefillFrom(o), accepted: draft.accepted });
+    }
+  });
+
   // ---------- События ----------
   root.addEventListener('click', (e) => {
     const t = e.target.closest('button, a, [data-open], [data-client], [data-overlay]');
@@ -456,13 +735,25 @@
     }
     if (t.hasAttribute('data-demo')) { createDemo(); return; }
     if (t.hasAttribute('data-logout')) { logout(); return; }
+    if (t.hasAttribute('data-compose-open')) { openCompose(); return; }
+    if (t.dataset.repeat) { const o = byId(t.dataset.repeat); if (o) openCompose(prefillFrom(o)); return; }
+    if (t.dataset.composeFor) {
+      const c = clients().find((x) => x.key === t.dataset.composeFor);
+      const last = c && c.orders[c.orders.length - 1];
+      if (c) openCompose({ phone: c.phone, name: c.name, address: (last && last.address) || '', method: last && last.address ? 'delivery' : 'pickup' });
+      return;
+    }
     if (t.hasAttribute('data-to-site')) { e.preventDefault(); leaveCrm(); return; }
+    if (t.hasAttribute('data-overlay') && draft) { closeCompose(); return; }
     if (t.hasAttribute('data-close') || t.hasAttribute('data-overlay')) { state.openId = null; state.openClient = null; state.confirmCancel = false; renderDrawer(); return; }
     if (t.dataset.client) { state.openClient = t.dataset.client; state.openId = null; renderDrawer(); return; }
     if (t.dataset.open) { state.openId = t.dataset.open; state.openClient = null; state.confirmCancel = false; state.fresh.delete(t.dataset.open); render(); }
   });
   root.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { state.openId = null; state.openClient = null; renderDrawer(); }
+    if (e.key === 'Escape') {
+      if (draft) { closeCompose(); return; }
+      state.openId = null; state.openClient = null; renderDrawer();
+    }
     if (e.key === 'Enter' && e.target.matches('[data-open], [data-client]')) e.target.click();
   });
   root.addEventListener('submit', async (e) => {

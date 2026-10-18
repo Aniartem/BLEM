@@ -33,7 +33,9 @@ function createTelegram({ token, chatIds, apiBase = 'https://api.telegram.org', 
   }
 
   function text(o) {
-    const head = o.status === 'new' ? `🔔 <b>Новый заказ № ${o.number}</b>` : `<b>Заказ № ${o.number}</b>`;
+    const head = o.source === 'phone'
+      ? `☎️ <b>Заказ по телефону № ${o.number}</b>`
+      : o.status === 'new' ? `🔔 <b>Новый заказ № ${o.number}</b>` : `<b>Заказ № ${o.number}</b>`;
     const last = (o.history || [])[o.history.length - 1];
     const who = last && last.by ? ` · ${esc(last.by)}` : '';
     const lines = [

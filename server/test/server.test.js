@@ -242,6 +242,34 @@ test('Telegram: команда /id подсказывает ID чата', async 
   assert.match(reply.text, /TELEGRAM_CHAT_IDS/);
 });
 
+test('CRM: оператор оформляет заказ по телефону', async () => {
+  const phoneOrder = order({ name: 'Нина', phone: '+79120007777', items: [{ id: 'cucumber-maki', qty: 1 }], accepted: true, price: 1 });
+  assert.equal((await api('POST', '/api/staff/orders', phoneOrder)).status, 401);
+  assert.equal((await api('POST', '/api/staff/orders', phoneOrder, { cookie, origin: 'https://evil.example' })).status, 403);
+
+  tg.sent.length = 0;
+  const r = await api('POST', '/api/staff/orders', phoneOrder, { cookie, origin: base });
+  assert.equal(r.status, 201);
+  const o = (await r.json()).order;
+  assert.equal(o.status, 'accepted');            // клиент подтвердил по телефону
+  assert.equal(o.source, 'phone');
+  assert.equal(o.createdBy, 'Мария');
+  assert.equal(o.total, 200 + 200);              // ниже минимальной суммы — оператору можно, доставка платная
+  assert.deepEqual(o.history.map((h) => [h.status, h.by]), [['new', 'Мария'], ['accepted', 'Мария']]);
+  const msg = await until(() => tg.sent.find((m) => m.text.includes(`№ ${o.number}`)));
+  assert.match(msg.text, /Заказ по телефону/);
+  assert.match(msg.text, /Принят<\/b> · Мария/);
+  assert.equal(msg.reply_markup.inline_keyboard[0][0].text, 'На кухню →');
+
+  // у оператора нет лимита «5 заказов за 10 минут»
+  for (let i = 0; i < 7; i++) {
+    const rr = await api('POST', '/api/staff/orders', order({ phone: `+7912000880${i}` }), { cookie, ip: '10.7.7.7' });
+    assert.equal(rr.status, 201);
+  }
+  const bad = await api('POST', '/api/staff/orders', order({ phone: '12' }), { cookie });
+  assert.equal(bad.status, 422);
+});
+
 test('выход из CRM закрывает сессию', async () => {
   const r = await api('POST', '/api/logout', null, { cookie });
   assert.match(r.headers.get('set-cookie'), /Max-Age=0/);
