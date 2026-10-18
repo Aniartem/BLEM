@@ -255,15 +255,19 @@
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
+  // хранилище может быть запрещено или не отвечать — тогда не ждём дольше 3 секунд
+  const within = (p, ms, fallback) => Promise.race([p, new Promise((resolve) => setTimeout(() => resolve(fallback), ms))]);
   async function idbGet(key) {
     try {
-      const d = await idb();
+      const d = await within(idb(), 3000, null);
+      if (!d) return null;
       return await new Promise((resolve) => { const r = d.transaction('kv').objectStore('kv').get(key); r.onsuccess = () => resolve(r.result); r.onerror = () => resolve(null); });
     } catch (e) { return null; }
   }
   async function idbSet(key, value) {
     try {
-      const d = await idb();
+      const d = await within(idb(), 3000, null);
+      if (!d) return;
       await new Promise((resolve) => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(value, key); t.oncomplete = resolve; t.onerror = resolve; });
     } catch (e) { /* без хранилища демо работает до перезагрузки страницы */ }
   }
@@ -280,7 +284,8 @@
   }
 
   // другие вкладки демо подхватывают изменения: CRM перечитывает заказы, как после переподключения
-  const channel = 'BroadcastChannel' in window ? new BroadcastChannel('rollevich-demo') : null;
+  let channel = null;
+  try { channel = new BroadcastChannel('rollevich-demo'); } catch (e) { /* без связи вкладок: каждая страница сама по себе */ }
   if (channel) {
     channel.onmessage = async (e) => {
       if (!e.data || e.data.type !== 'changed' || !liveDb) return;
@@ -585,6 +590,14 @@
   // ---------------------------------------------------------------- панель «Демо»
   async function loginAs(login) {
     await ready;
+    // на экране входа CRM — через обычную форму: без перезагрузки, работает даже без хранилища браузера
+    const form = document.querySelector('[data-login]');
+    if (form) {
+      form.querySelector('#crm-login').value = login;
+      form.querySelector('#crm-password').value = PASSWORD;
+      form.requestSubmit();
+      return;
+    }
     const r = await dispatch('POST', '/api/login', { 'content-type': 'application/json' }, JSON.stringify({ login, password: PASSWORD }));
     if (!r.ok) return;
     if (/crm\.html$/.test(location.pathname)) location.reload(); else location.href = 'crm.html';
@@ -604,11 +617,22 @@
 
   function panel() {
     const css = `
-      .rv-demo { position: fixed; right: 0; top: 38%; z-index: 2147483000; font: 500 14px/1.4 -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif; color: #1d1d1f; }
+      .rv-demo { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 2147483000; font: 500 14px/1.4 -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif; color: #1d1d1f; }
       .rv-demo, .rv-demo * { box-sizing: border-box; }
       .rv-demo__tab[hidden] { display: none; }
-      .rv-demo__tab { display: block; padding: 12px 7px; border: 0; border-radius: 12px 0 0 12px; background: #1d1d1f; color: #fff; cursor: pointer; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .08em; font: inherit; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
-      .rv-demo__card { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 290px; padding: 18px; border-radius: 18px; background: rgba(255,255,255,.97); box-shadow: 0 24px 64px rgba(0,0,0,.22), 0 0 0 .5px rgba(0,0,0,.08); backdrop-filter: blur(20px); }
+      .rv-demo--right { left: auto; right: max(16px, env(safe-area-inset-right, 0px)); }
+      .rv-demo--right .rv-demo__card { left: auto; right: 0; }
+      @media (max-width: 700px) { .rv-demo:not(.rv-demo--right) { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } }
+      .rv-demo__tab { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: #c9a45c; color: #17130c; cursor: pointer; font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.15) inset; }
+      .rv-demo__tab:hover { filter: brightness(1.06); }
+      .rv-demo__tab i { width: 8px; height: 8px; border-radius: 50%; background: #17130c; opacity: .35; }
+      .rv-demo__tab i.is-ok { background: #1f8a3c; opacity: 1; }
+      .rv-demo__status { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; font-size: 13px; color: #6e6e73; }
+      .rv-demo__status i { width: 8px; height: 8px; border-radius: 50%; background: #ff9f0a; flex: none; }
+      .rv-demo__status.is-ok i { background: #34c759; }
+      .rv-demo__status.is-bad { color: #d70015; }
+      .rv-demo__status.is-bad i { background: #ff3b30; }
+      .rv-demo__card { position: absolute; left: 0; bottom: 0; width: min(310px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow-y: auto; padding: 18px; border-radius: 18px; background: rgba(255,255,255,.97); box-shadow: 0 24px 64px rgba(0,0,0,.22), 0 0 0 .5px rgba(0,0,0,.08); backdrop-filter: blur(20px); }
       .rv-demo__card[hidden] { display: none; }
       .rv-demo__card h3 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
       .rv-demo__card p { margin: 0 0 12px; color: #6e6e73; font-size: 13px; font-weight: 400; }
@@ -625,10 +649,11 @@
     const el = document.createElement('div');
     el.className = 'rv-demo';
     el.innerHTML = `
-      <button type="button" class="rv-demo__tab" data-demo-toggle aria-expanded="false">ДЕМО</button>
+      <button type="button" class="rv-demo__tab" data-demo-toggle aria-expanded="false"><i data-demo-dot></i>Демо · войти в CRM</button>
       <div class="rv-demo__card" hidden>
         <button type="button" class="rv-demo__x" data-demo-toggle aria-label="Скрыть">×</button>
         <h3>Демо РОЛЛЕВИЧ</h3>
+        <p class="rv-demo__status" data-demo-status><i></i><span>Запускаем демо-сервер…</span></p>
         <p>Всё работает по-настоящему, но данные хранятся только в вашем браузере — у каждого своя копия.</p>
         <b>Страницы</b>
         <div class="rv-demo__links">
@@ -642,14 +667,25 @@
         <p>1111 — повар, 2222 — кухонный работник, 3333 — уборка, 4444 — курьер, 5555 — администратор</p>
         <button type="button" class="rv-demo__reset" data-demo-reset>Сбросить демо к исходным данным</button>
       </div>`;
-    (document.getElementById('crm') || document.body).appendChild(el); // CRM скрывает всё, что вне #crm
+    const crmRoot = document.getElementById('crm');
+    if (crmRoot) el.classList.add('rv-demo--right'); // в CRM слева внизу — карточка сотрудника
+    (crmRoot || document.body).appendChild(el); // CRM скрывает всё, что вне #crm
+    const status = el.querySelector('[data-demo-status]');
+    ready.then(() => {
+      status.className = 'rv-demo__status is-ok';
+      status.querySelector('span').textContent = 'Демо-сервер работает';
+      el.querySelector('[data-demo-dot]').classList.add('is-ok');
+    }, (e) => {
+      status.className = 'rv-demo__status is-bad';
+      status.querySelector('span').textContent = 'Демо-сервер не запустился: ' + ((e && e.message) || 'ошибка');
+    });
     const card = el.querySelector('.rv-demo__card');
     const toggle = (open) => { card.hidden = !open; el.querySelector('.rv-demo__tab').hidden = open; };
     el.addEventListener('click', (e) => {
       const t = e.target.closest('button');
       if (!t) return;
       if (t.hasAttribute('data-demo-toggle')) toggle(card.hidden);
-      if (t.dataset.demoLogin) loginAs(t.dataset.demoLogin);
+      if (t.dataset.demoLogin) { loginAs(t.dataset.demoLogin); toggle(false); }
       if (t.hasAttribute('data-demo-reset')) reset(t);
     });
     // на экране входа в CRM сразу показываем, под кем можно войти
