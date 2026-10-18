@@ -12,6 +12,7 @@ const { createAuth } = require('./auth');
 const { createTelegram, STATUS } = require('./telegram');
 const { createShifts } = require('./shifts');
 const { createStock } = require('./stock');
+const { createTechCards } = require('./techcards');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -123,6 +124,8 @@ function createApp(cfg, { log = console } = {}) {
   }
   const broadcast = (order) => broadcastEvent('order', order);
   const stock = createStock({ db, tg, timeZone: cfg.timeZone, log });
+  const techcards = createTechCards({ db, stock, getMenu: () => menu, log });
+  const KITCHEN_STATUSES = new Set(['cooking', 'delivering', 'done']);
   const shifts = createShifts({ db, secureCookies: cfg.secureCookies, broadcast: broadcastEvent, tg, timeZone: cfg.timeZone, photoDir: cfg.photoDir, photoDays: cfg.photoDays, log });
 
   async function setStatus(id, status, by) {
@@ -132,6 +135,16 @@ function createApp(cfg, { log = console } = {}) {
     if (order.status === status) return order;
     order.status = status;
     order.history = [...(order.history || []), { status, at: Date.now(), by }];
+    // заказ ушёл на кухню — списываем сырьё по техкартам (один раз; отмена после этого не возвращает)
+    if (KITCHEN_STATUSES.has(status) && !order.stockDeducted) {
+      try {
+        const r = techcards.consumeOrder(order, by);
+        order.stockDeducted = true;
+        if (r.missing.length) order.stockMissing = r.missing;
+      } catch (e) {
+        log.error(`[stock] не удалось списать сырьё по заказу № ${order.number}:`, e.message);
+      }
+    }
     db.saveOrder(order);
     broadcast(order);
     tg.syncStatus(order).catch(() => {});
@@ -147,7 +160,15 @@ function createApp(cfg, { log = console } = {}) {
     try { return new URL(origin).host === req.headers.host; } catch (e) { return false; }
   }
 
+  // Вход администратора: заказы, деньги, склад, табель
   function staff(req, res) {
+    const user = auth.userFrom(req);
+    if (!user) { send(res, 401, { error: 'Войдите в CRM' }); return null; }
+    if (user.role !== 'admin') { send(res, 403, { error: 'Этот раздел доступен только администратору' }); return null; }
+    return user;
+  }
+  // Вход повара или администратора: техкарты
+  function kitchen(req, res) {
     const user = auth.userFrom(req);
     if (!user) { send(res, 401, { error: 'Войдите в CRM' }); return null; }
     return user;
@@ -212,7 +233,7 @@ function createApp(cfg, { log = console } = {}) {
     'POST /api/logout': (req, res) => send(res, 200, { ok: true }, { 'Set-Cookie': auth.logout(req) }),
 
     'GET /api/me': (req, res) => {
-      const user = staff(req, res);
+      const user = kitchen(req, res);
       if (user) send(res, 200, { user });
     },
 
@@ -234,8 +255,9 @@ function createApp(cfg, { log = console } = {}) {
 
   const shiftRoutes = shifts.routes({ send, readJson, staff, sameOrigin });
   const stockRoutes = stock.routes({ send, readJson, staff, sameOrigin });
-  Object.assign(routes, shiftRoutes.exact, stockRoutes.exact);
-  const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern];
+  const techRoutes = techcards.routes({ send, readJson, kitchen, sameOrigin });
+  Object.assign(routes, shiftRoutes.exact, stockRoutes.exact, techRoutes.exact);
+  const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern, ...techRoutes.pattern];
 
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
@@ -302,6 +324,7 @@ function createApp(cfg, { log = console } = {}) {
     tg,
     shifts,
     stock,
+    techcards,
     setStatus,
     start() {
       tg.start(setStatus);

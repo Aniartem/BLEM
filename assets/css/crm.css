@@ -352,6 +352,23 @@ body.crm-page { margin: 0; background: var(--crm-bg); color: var(--crm-text); co
 .tbl .doc-lines > td { padding: 0 12px 12px; background: var(--crm-panel-2); cursor: default; }
 .tbl .doc-lines .tbl tr { cursor: default; }
 
+/* техкарты */
+.tc-progress { height: 6px; border-radius: 3px; background: var(--crm-panel-2); overflow: hidden; }
+.tc-progress span { display: block; height: 100%; background: var(--crm-gold); }
+.tc-editor h3 { margin: 6px 0 0; }
+.tc-yield { max-width: 220px; }
+.tc-yield input, .tc-editor textarea { height: 40px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--crm-line); background: var(--crm-bg); outline: none; width: 100%; }
+.tc-editor textarea { height: auto; padding: 10px; resize: vertical; font: inherit; color: inherit; }
+.tc-editor textarea:focus, .tc-yield input:focus { border-color: var(--crm-gold); }
+.tc-kind { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--crm-muted); white-space: nowrap; }
+.tc-qty { display: flex; align-items: center; gap: 6px; }
+.tc-qty input { max-width: 110px; min-width: 70px; }
+.tc-qty span { color: var(--crm-muted); min-width: 34px; }
+.tc-totals { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--crm-panel-2); line-height: 1.7; }
+.tbl .warn, .tc-totals .warn { color: var(--crm-new); }
+.tc-totals .pos { color: var(--crm-ok); }
+.tc-totals .neg { color: var(--crm-danger); }
+
 @media (max-width: 1100px) {
   .crm-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

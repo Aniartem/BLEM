@@ -1,5 +1,6 @@
 'use strict';
-// Склад: справочник сырья и поставщиков, приход по накладным, списания, инвентаризация, остатки.
+// Склад: справочник сырья и поставщиков, приход по накладным, списания, инвентаризация, остатки,
+// автосписание по техкартам при продаже.
 // Остаток — сумма движений по сырью; средняя цена — по всем приходам (средневзвешенная).
 
 const UNITS = ['кг', 'л', 'шт', 'уп'];
@@ -17,7 +18,7 @@ const STARTER = [
   ['Огурцы', 'кг', 'Овощи и фрукты', 2], ['Авокадо', 'кг', 'Овощи и фрукты', 2], ['Пекинская капуста', 'кг', 'Овощи и фрукты', 1],
   ['Перец болгарский', 'кг', 'Овощи и фрукты', 1], ['Зелёный лук', 'кг', 'Овощи и фрукты', 0.3], ['Помидоры черри', 'кг', 'Овощи и фрукты', 0.5],
   ['Сливочный сыр', 'кг', 'Молочное и яйца', 3], ['Яйцо куриное', 'шт', 'Молочное и яйца', 60], ['Сыр пармезан', 'кг', 'Молочное и яйца', 0.3],
-  ['Рис для суши', 'кг', 'Бакалея', 20], ['Нори', 'уп', 'Бакалея', 5], ['Соевая бумага', 'уп', 'Бакалея', 2],
+  ['Рис для суши', 'кг', 'Бакалея', 20], ['Нори (листы)', 'шт', 'Бакалея', 100], ['Соевая бумага', 'уп', 'Бакалея', 2],
   ['Панко', 'кг', 'Бакалея', 2], ['Мука темпурная', 'кг', 'Бакалея', 2], ['Кунжут', 'кг', 'Бакалея', 0.5],
   ['Лапша удон', 'кг', 'Бакалея', 3], ['Рисовая лапша', 'кг', 'Бакалея', 2], ['Масло фритюрное', 'л', 'Бакалея', 5],
   ['Уксус рисовый', 'л', 'Соусы и специи', 2], ['Соевый соус', 'л', 'Соусы и специи', 5], ['Соус унаги', 'л', 'Соусы и специи', 1],
@@ -58,7 +59,7 @@ function setupSchema(raw) {
     -- документ: приход (накладная), списание или инвентаризация
     CREATE TABLE IF NOT EXISTS stock_docs (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      kind        TEXT NOT NULL CHECK (kind IN ('receipt', 'writeoff', 'inventory')),
+      kind        TEXT NOT NULL CHECK (kind IN ('receipt', 'writeoff', 'inventory', 'sale')),
       at          INTEGER NOT NULL,
       doc_date    TEXT NOT NULL,
       supplier_id INTEGER REFERENCES stock_suppliers(id),
@@ -253,6 +254,25 @@ function createStock({ db, raw = db.raw, tg, timeZone = 'Europe/Samara', log = c
     return res;
   }
 
+  // Списание сырья по проданному заказу (по техкартам). lines: [{ productId, qty }] в единицах склада
+  function createSale(orderNumber, lines, by) {
+    if (!lines.length) return null;
+    const before = snapshotQty();
+    const views = new Map(q.products.all().map((r) => [r.id, productView(r)]));
+    const res = withTransaction(() => {
+      const valid = lines.filter((l) => views.has(l.productId) && l.qty > 0);
+      const total = round(valid.reduce((s, l) => s + l.qty * views.get(l.productId).avgPrice, 0), 2);
+      const id = Number(q.insertDoc.run('sale', Date.now(), today(), null, String(orderNumber), `Заказ № ${orderNumber}`, '', total, by).lastInsertRowid);
+      valid.forEach((l) => q.insertMove.run(id, l.productId, -round(l.qty), views.get(l.productId).avgPrice, null, null));
+      return { id, total, lines: valid.length };
+    });
+    lowStockAlerts(before);
+    return res;
+  }
+
+  // Средняя цена по сырью — для себестоимости техкарт
+  const prices = () => new Map(q.products.all().map((r) => { const v = productView(r); return [v.id, v]; }));
+
   function docsView(kind, from, to) {
     return q.docs.all(kind, from, to).map((d) => ({
       id: d.id, at: d.at, date: d.doc_date, supplier: d.supplier || '', number: d.number, reason: d.reason, note: d.note,
@@ -304,7 +324,7 @@ function createStock({ db, raw = db.raw, tg, timeZone = 'Europe/Samara', log = c
         'GET /api/staff/stock/docs': (req, res, url) => {
           if (!staff(req, res)) return;
           const kind = url.searchParams.get('kind');
-          if (!['receipt', 'writeoff', 'inventory'].includes(kind)) return send(res, 400, { error: 'Неизвестный вид документа' });
+          if (!['receipt', 'writeoff', 'inventory', 'sale'].includes(kind)) return send(res, 400, { error: 'Неизвестный вид документа' });
           const from = Number(url.searchParams.get('from')) || Date.now() - 31 * 864e5;
           const to = Number(url.searchParams.get('to')) || Date.now() + 864e5;
           send(res, 200, { docs: docsView(kind, from, to) });
@@ -332,7 +352,7 @@ function createStock({ db, raw = db.raw, tg, timeZone = 'Europe/Samara', log = c
     };
   }
 
-  return { routes, overview, createReceipt, createWriteoff, createInventory, STARTER };
+  return { routes, overview, createReceipt, createWriteoff, createInventory, createSale, prices, STARTER };
 }
 
 const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

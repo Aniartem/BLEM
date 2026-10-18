@@ -263,6 +263,7 @@
       <div class="dr-body">
         <div class="dr-block">
           <div class="kv"><span>Клиент</span><b>${esc(o.name)}</b></div>
+          ${o.stockMissing && o.stockMissing.length ? `<div class="kv kv--note"><span>Склад</span><b>Не списано — нет техкарты: ${esc(o.stockMissing.join(', '))}</b></div>` : ''}
           <div class="kv"><span>Откуда</span><b>${o.source === 'phone' ? 'Телефон' + (o.createdBy ? ' · принял ' + esc(o.createdBy) : '') : 'Сайт'}</b></div>
           <div class="kv"><span>Телефон</span><b class="sel">${esc(o.phone)}</b><button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-copy="${esc(o.phone)}">Копировать</button></div>
           <div class="kv"><span>${o.method === 'pickup' ? 'Получение' : 'Адрес'}</span><b>${o.method === 'pickup' ? 'Самовывоз' : esc(o.address)}</b></div>
@@ -336,6 +337,9 @@
     if (first && !first.value) first.focus();
   }
 
+  // повар входит в CRM только ради техкарт: без заказов, денег и клиентов
+  const isCook = () => !!state.user && state.user.role === 'cook';
+
   function render() {
     const userEl = $('[data-user]');
     userEl.hidden = !state.user;
@@ -349,22 +353,30 @@
       document.title = 'Вход · CRM РОЛЛЕВИЧ';
       return;
     }
+    const cook = isCook();
+    if (cook && !(extraViews[state.view] && extraViews[state.view].cook)) state.view = Object.keys(extraViews).find((k) => extraViews[k].cook) || state.view;
+    root.querySelectorAll('.crm-tabs [data-view]:not([data-ext-tab])').forEach((b) => { b.hidden = cook; });
+    $('[data-compose-open]').hidden = cook;
+    $('[data-sound]').hidden = cook;
+    $('[data-q]').closest('.crm-search').hidden = cook;
     root.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === state.view)));
     const btn = $('[data-sound]');
     btn.setAttribute('aria-pressed', String(state.sound));
     btn.textContent = state.sound ? 'Звук включён' : 'Звук выключен';
     $('[data-conn]').innerHTML = state.error
       ? `<span class="dot dot--err"></span>${esc(state.error)}`
+      : cook ? '<span class="dot dot--ok"></span>Техкарты блюд: состав, граммовка, технология'
       : state.kind === 'db' || state.kind === 'api'
         ? '<span class="dot dot--ok"></span>Онлайн: заказы с сайта приходят сюда в реальном времени'
         : state.kind === 'local'
           ? '<span class="dot dot--warn"></span>Локальный режим: видны только заказы, оформленные в этом браузере'
           : '<span class="dot"></span>Подключаемся…';
-    root.querySelectorAll('[data-ext-tab]').forEach((b) => { b.hidden = !extraViews[b.dataset.view].available(state.kind); });
-    if (extraViews[state.view] && !extraViews[state.view].available(state.kind)) state.view = 'board';
+    const allowed = (v) => v.available(state.kind) && (!cook || v.cook);
+    root.querySelectorAll('[data-ext-tab]').forEach((b) => { b.hidden = !allowed(extraViews[b.dataset.view]); });
+    if (extraViews[state.view] && !allowed(extraViews[state.view])) state.view = 'board';
     $('[data-stats]').hidden = !!extraViews[state.view];
-    $('[data-ext-status]').hidden = state.needLogin;
-    Object.values(extraViews).forEach((v) => v.status && v.status($('[data-ext-status]'), state.kind));
+    $('[data-ext-status]').hidden = state.needLogin || cook;
+    if (!cook) Object.values(extraViews).forEach((v) => v.status && v.status($('[data-ext-status]'), state.kind));
     if (extraViews[state.view]) { extraViews[state.view].render($('[data-main]')); renderDrawer(); return; }
     delete $('[data-main]').dataset.ext;
     renderStats();
@@ -780,7 +792,7 @@
       state.user = await Store.login(f.login.value.trim(), f.password.value);
       state.needLogin = false;
       state.loginError = '';
-      subscribe();
+      if (!isCook()) subscribe();
       render();
     } catch (err) {
       state.loginError = err && err.message ? err.message : 'Не удалось войти. Проверьте интернет.';
@@ -889,7 +901,7 @@
       try { state.user = await Store.me(); } catch (e) { state.error = 'Нет связи с сервером заказов. Обновите страницу.'; }
       if (!state.user && !state.error) { state.needLogin = true; if (isCrmRoute()) render(); return; }
     }
-    subscribe();
+    if (!isCook()) subscribe();
     if (isCrmRoute()) render();
   })();
 

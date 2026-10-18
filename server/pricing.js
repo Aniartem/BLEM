@@ -12,7 +12,7 @@ function loadMenu(file) {
   if (!Array.isArray(menu) || !config) throw new Error('menu.js: нет ROLLEVICH_MENU или ROLLEVICH_CONFIG');
   const items = new Map();
   menu.forEach((cat) => cat.items.forEach((it) => items.set(it.id, it)));
-  return { items, config };
+  return { menu, items, config };
 }
 
 class OrderError extends Error {

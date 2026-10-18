@@ -1,8 +1,9 @@
 'use strict';
 // Управление CRM из командной строки:
-//   node server/manage.js add-user <логин> "<Имя>"   — добавить администратора CRM (пароль спросит).
-//        Администраторы видят всё: заказы, кассу, табель, зарплаты. Повара, курьеры и другие
-//        сотрудники входа в CRM не имеют — они отмечаются ПИН-кодом на планшете.
+//   node server/manage.js add-user <логин> "<Имя>"         — добавить администратора CRM (пароль спросит).
+//        Администраторы видят всё: заказы, кассу, склад, табель, зарплаты.
+//   node server/manage.js add-user <логин> "<Имя>" --cook  — вход для повара: только техкарты, без цен.
+//        Остальные сотрудники входа в CRM не имеют — они отмечаются ПИН-кодом на планшете.
 //   node server/manage.js passwd <логин>              — сменить пароль (выходит из всех сессий)
 //   node server/manage.js remove-user <логин>         — удалить сотрудника
 //   node server/manage.js users                       — список сотрудников
@@ -37,15 +38,17 @@ async function newPassword() {
 }
 
 async function main() {
-  const [cmd, a, b] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const cook = args.includes('--cook');
+  const [cmd, a, b] = args.filter((x) => x !== '--cook');
   const db = open(cfg.dbFile);
   try {
     if (cmd === 'add-user') {
       const login = String(a || '').trim().toLowerCase();
       if (!/^[a-z0-9._-]{3,32}$/.test(login)) throw new Error('Логин: 3–32 латинские буквы, цифры, точка, дефис');
       if (db.userByLogin(login)) throw new Error(`Сотрудник ${login} уже есть`);
-      db.addUser(login, String(b || login).trim(), await newPassword());
-      console.log(`Добавлен администратор: ${login}`);
+      db.addUser(login, String(b || login).trim(), await newPassword(), cook ? 'cook' : 'admin');
+      console.log(`Добавлен ${cook ? 'повар (только техкарты)' : 'администратор'}: ${login}`);
     } else if (cmd === 'passwd') {
       if (!db.userByLogin(String(a || '').toLowerCase())) throw new Error('Нет такого сотрудника');
       db.setPassword(String(a).toLowerCase(), await newPassword());
@@ -55,7 +58,7 @@ async function main() {
     } else if (cmd === 'users') {
       const list = db.listUsers();
       if (!list.length) console.log('Сотрудников нет');
-      list.forEach((u) => console.log(`${u.login}\t${u.name}\tс ${new Date(u.created_at).toLocaleDateString('ru-RU')}`));
+      list.forEach((u) => console.log(`${u.login}\t${u.name}\t${u.role === 'cook' ? 'повар' : 'администратор'}\tс ${new Date(u.created_at).toLocaleDateString('ru-RU')}`));
     } else if (cmd === 'backup') {
       const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
       const file = path.resolve(a || path.join(path.dirname(cfg.dbFile), 'backups', `rollevich-${stamp}.db`));

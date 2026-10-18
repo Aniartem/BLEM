@@ -50,6 +50,10 @@ function open(file) {
       value TEXT NOT NULL
     );
   `);
+  // роль входа в CRM: admin — всё; cook — только техкарты (без цен и денег)
+  if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'role')) {
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'");
+  }
   return wrap(db);
 }
 
@@ -63,14 +67,14 @@ function wrap(db) {
     countRecentByPhone: db.prepare('SELECT COUNT(*) AS n FROM orders WHERE phone = ? AND created_at >= ?'),
 
     userByLogin: db.prepare('SELECT * FROM users WHERE login = ?'),
-    userById: db.prepare('SELECT id, login, name FROM users WHERE id = ?'),
-    listUsers: db.prepare('SELECT id, login, name, created_at FROM users ORDER BY id'),
-    insertUser: db.prepare('INSERT INTO users (login, name, pass_hash, created_at) VALUES (?, ?, ?, ?)'),
+    userById: db.prepare('SELECT id, login, name, role FROM users WHERE id = ?'),
+    listUsers: db.prepare('SELECT id, login, name, role, created_at FROM users ORDER BY id'),
+    insertUser: db.prepare('INSERT INTO users (login, name, pass_hash, created_at, role) VALUES (?, ?, ?, ?, ?)'),
     setPass: db.prepare('UPDATE users SET pass_hash = ? WHERE login = ?'),
     deleteUser: db.prepare('DELETE FROM users WHERE login = ?'),
 
     insertSession: db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)'),
-    sessionUser: db.prepare('SELECT u.id, u.login, u.name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'),
+    sessionUser: db.prepare('SELECT u.id, u.login, u.name, u.role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE token_hash = ?'),
     deleteUserSessions: db.prepare('DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE login = ?)'),
     purgeSessions: db.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
@@ -117,7 +121,7 @@ function wrap(db) {
     userByLogin: (login) => q.userByLogin.get(login),
     userById: (id) => q.userById.get(id),
     listUsers: () => q.listUsers.all(),
-    addUser: (login, name, hash) => q.insertUser.run(login, name, hash, Date.now()),
+    addUser: (login, name, hash, role = 'admin') => q.insertUser.run(login, name, hash, Date.now(), role),
     setPassword(login, hash) {
       const r = q.setPass.run(hash, login);
       q.deleteUserSessions.run(login);

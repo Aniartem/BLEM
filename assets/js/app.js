@@ -417,6 +417,25 @@
   const header = $('.header');
   window.addEventListener('scroll', () => header.classList.toggle('is-scrolled', window.scrollY > 40), { passive: true });
 
+  // Вес порций из техкарт (только на своём сервере): «8 шт» → «8 шт · 260 г»
+  async function loadWeights() {
+    try {
+      const b = await window.RollevichStore.backend();
+      if (b.kind !== 'api') return;
+      const res = await fetch('/api/public/weights');
+      if (!res.ok) return;
+      const { weights } = await res.json();
+      Object.entries(weights || {}).forEach(([id, g]) => {
+        const it = ITEMS[id];
+        if (!it || !(g > 0)) return;
+        it.meta = [it.meta, `${g} г`].filter(Boolean).join(' · ');
+        const el = $(`.card[data-id="${id}"] .card__meta`);
+        if (el) el.textContent = it.meta;
+      });
+      renderCart();
+    } catch (e) { /* без веса сайт работает как раньше */ }
+  }
+
   // ---------- Старт ----------
   $('[data-year]').textContent = new Date().getFullYear();
   $('[data-hero-art]').innerHTML = window.renderHeroArt();
@@ -430,4 +449,5 @@
   }
   initScrollSpy();
   initReveal();
+  loadWeights();
 })();

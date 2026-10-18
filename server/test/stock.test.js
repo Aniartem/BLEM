@@ -96,9 +96,9 @@ test('приход по накладной: остатки, средняя це�
   assert.equal(s.suppliers.length, 1); // тот же поставщик без учёта регистра
   assert.deepEqual(s.expiring.map((e) => [e.name, e.expiry]), [['Лосось охлаждённый', day(1)]]); // срок через 5 дней ещё не «истекает»
 
-  const bad = await json(await api('POST', '/api/staff/stock/receipts', { supplier: 'X', lines: [{ productId: pid('Нори'), qty: 0, price: 10 }] }));
+  const bad = await json(await api('POST', '/api/staff/stock/receipts', { supplier: 'X', lines: [{ productId: pid('Нори (листы)'), qty: 0, price: 10 }] }));
   assert.match(bad.error, /количество/);
-  assert.match((await json(await api('POST', '/api/staff/stock/receipts', { lines: [{ productId: pid('Нори'), qty: 1 }] }))).error, /поставщика/);
+  assert.match((await json(await api('POST', '/api/staff/stock/receipts', { lines: [{ productId: pid('Нори (листы)'), qty: 1 }] }))).error, /поставщика/);
   assert.match((await json(await api('POST', '/api/staff/stock/receipts', { supplier: 'X', lines: [{ productId: 99999, qty: 1 }] }))).error, /нет в справочнике/);
 });
 
