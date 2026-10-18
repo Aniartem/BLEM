@@ -239,7 +239,10 @@
     return out;
   }
 
-  function submitOrder() {
+  let sending = false;
+
+  async function submitOrder() {
+    if (sending) return;
     const form = $('[data-checkout]');
     const err = $('[data-form-error]');
     const data = Object.fromEntries(new FormData(form).entries());
@@ -259,18 +262,48 @@
     }
     err.textContent = '';
 
+    const now = Date.now();
     const order = {
-      items: Object.entries(state.cart).map(([id, q]) => ({ id, name: ITEMS[id].name, qty: q, price: ITEMS[id].price })),
+      id: window.RollevichStore.newId(),
+      number: window.RollevichStore.newNumber(),
+      createdAt: now,
+      status: 'new',
+      history: [{ status: 'new', at: now }],
+      name: data.name.trim(),
+      phone: data.phone,
       method: state.method,
-      promo: state.promo,
-      ...data,
-      ...t
+      address: state.method === 'delivery' ? data.address.trim() : '',
+      persons: Number(data.persons) || 1,
+      time: data.time,
+      payment: data.payment,
+      comment: data.comment.trim(),
+      promo: state.promo || '',
+      items: Object.entries(state.cart).map(([id, q]) => ({ id, name: ITEMS[id].name, qty: q, price: ITEMS[id].price })),
+      subtotal: t.subtotal,
+      discount: t.discount,
+      delivery: t.delivery,
+      total: t.total
     };
-    // TODO: отправка заказа (Telegram-бот / CRM / iiko). Пока просто логируем.
-    console.info('Новый заказ', order);
+
+    const btn = $('[data-submit-order]');
+    sending = true;
+    btn.disabled = true;
+    btn.textContent = 'Отправляем…';
+    try {
+      await window.RollevichStore.create(order);
+    } catch (e) {
+      err.textContent = e && e.code === 'quota_exceeded'
+        ? 'Сейчас не можем принять заказ онлайн. Позвоните нам: +7 (3412) 00-00-00'
+        : 'Не удалось отправить заказ. Проверьте интернет и нажмите ещё раз.';
+      return;
+    } finally {
+      sending = false;
+      btn.disabled = false;
+      btn.textContent = 'Оформить заказ';
+    }
 
     $('[data-modal-text]').textContent =
-      `${data.name.trim()}, мы перезвоним на ${data.phone} в течение 5 минут, чтобы подтвердить заказ на ${rub(t.total)}.`;
+      `Заказ № ${order.number} принят. ${order.name}, мы перезвоним на ${order.phone} в течение 5 минут, чтобы подтвердить заказ на ${rub(t.total)}.`;
     state.cart = {};
     state.promo = null;
     save();
