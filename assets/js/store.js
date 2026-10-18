@@ -140,6 +140,7 @@ window.RollevichStore = (function () {
   function backend() {
     if (!ready) {
       ready = (async () => {
+        if (window.ROLLEVICH_DEMO) return apiBackend(); // демо: сервер CRM работает прямо в браузере (demo/demo.js)
         if (window.claude && typeof window.claude.use === 'function') {
           const db = await window.claude.use('db');
           if (db) return withSetStatus(dbBackend(db));
