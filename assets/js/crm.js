@@ -636,13 +636,12 @@
   function openCompose(prefill = {}) {
     draft = {
       phone: '', name: '', method: 'delivery', address: '', persons: 2, time: 'Как можно скорее',
-      payment: 'Картой курьеру', comment: '', promo: '', items: {}, accepted: true, q: '', cat: 'all', error: '', sending: false,
+      payment: 'Картой курьеру', comment: '', promo: '', items: {}, accepted: true, q: '', cat: 'hits', error: '', sending: false,
       ...prefill
     };
     state.openId = null;
     state.openClient = null;
     renderDrawer();
-    const cats = MENU.map((c) => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');
     cz.innerHTML = `
       <div class="cz-head">
         <h2>Новый заказ по телефону</h2>
@@ -650,11 +649,12 @@
       </div>
       <div class="cz-body">
         <section class="cz-menu">
-          <div class="cz-menu__tools">
-            <input id="cz-q" type="search" placeholder="Название блюда" data-cz="q" autocomplete="off">
-            <select id="cz-cat" data-cz="cat"><option value="all">Все разделы</option><option value="hits">Хиты</option>${cats}</select>
+          <div class="cz-cats" role="tablist" aria-label="Разделы меню">${catTilesHTML()}</div>
+          <div class="cz-menu__head">
+            <h3 data-cz-title></h3>
+            <label class="cz-search">${icon('search')}<input id="cz-q" type="search" placeholder="Поиск по названию" data-cz="q" autocomplete="off" aria-label="Поиск по названию"></label>
           </div>
-          <div class="cz-list" data-cz-list></div>
+          <div class="cz-cards" data-cz-list></div>
         </section>
         <section class="cz-form">
           <div class="cz-grid">
@@ -662,6 +662,7 @@
             <label class="cz-f"><span>Имя</span><input id="cz-name" data-cz="name" autocomplete="off"></label>
           </div>
           <div class="cz-client" data-cz-client hidden></div>
+          <div class="cz-cart" data-cz-cart></div>
           <div class="cz-seg" role="radiogroup" aria-label="Получение">
             <label><input type="radio" name="cz-method" value="delivery" data-cz="method"><span>Доставка</span></label>
             <label><input type="radio" name="cz-method" value="pickup" data-cz="method"><span>Самовывоз −${Math.round(CFG.pickupDiscount * 100)}%</span></label>
@@ -676,10 +677,11 @@
             <label class="cz-f"><span>Комментарий</span><input id="cz-comment" data-cz="comment" placeholder="Домофон, этаж, пожелания" autocomplete="off"></label>
             <label class="cz-f"><span>Промокод</span><input id="cz-promo" data-cz="promo" autocomplete="off"></label>
           </div>
-          <div class="cz-cart" data-cz-cart></div>
           <label class="cz-check"><input id="cz-accepted" type="checkbox" data-cz="accepted"> Клиент подтвердил заказ — сразу в «Приняты»</label>
-          <p class="cz-err" data-cz-err></p>
-          <button type="button" class="crm-btn crm-btn--block" data-cz-submit>Создать заказ</button>
+          <div class="cz-submit">
+            <p class="cz-err" data-cz-err></p>
+            <button type="button" class="crm-btn crm-btn--block" data-cz-submit>Создать заказ</button>
+          </div>
         </section>
       </div>`;
     ['phone', 'name', 'address', 'time', 'payment', 'persons', 'comment', 'promo'].forEach((k) => {
@@ -693,7 +695,7 @@
     $('[data-overlay]').hidden = false;
     renderComposeList();
     renderComposeSide();
-    cz.querySelector(draft.phone ? '#cz-q' : '#cz-phone').focus();
+    if (!draft.phone) cz.querySelector('#cz-phone').focus();
   }
 
   function closeCompose() {
@@ -703,28 +705,69 @@
     $('[data-overlay]').hidden = !(state.openId || state.openClient);
   }
 
+  // ---------- Каталог в бланке заказа: разделы плитками, блюда карточками ----------
+  const STAR = '<svg class="cz-cat__star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z" fill="currentColor"/></svg>';
+  const artCache = new Map();
+  const art = (it) => {
+    if (it.image) return `<img src="${esc(it.image)}" alt="" loading="lazy">`;
+    if (!window.renderArt) return '';
+    if (!artCache.has(it.id)) artCache.set(it.id, window.renderArt(it));
+    return artCache.get(it.id);
+  };
+  const isHit = (it) => (it.tags || []).includes('hit');
+  const HITS = { id: 'hits', title: 'Хиты', items: MENU.flatMap((c) => c.items.filter(isHit)) };
+  const catById = (id) => (id === 'hits' ? HITS : MENU.find((c) => c.id === id) || HITS);
+
+  function catTilesHTML() {
+    return [HITS, ...MENU].map((c) => {
+      const face = c.id === 'hits' ? STAR : art(c.items.find(isHit) || c.items[0]);
+      return `<button type="button" class="cz-cat" role="tab" data-cz-cat="${esc(c.id)}" aria-selected="false">
+        <span class="cz-cat__img ${c.id === 'hits' ? 'cz-cat__img--hits' : ''}">${face}</span>
+        <span class="cz-cat__name">${esc(c.title)}</span></button>`;
+    }).join('');
+  }
+
+  function cardHTML(it) {
+    const qty = draft.items[it.id] || 0;
+    return `
+      <div class="cz-card ${qty ? 'is-in' : ''}" data-cz-card="${esc(it.id)}" role="button" tabindex="0" aria-label="${esc(it.name)}, ${rub(it.price)}${qty ? ', в заказе ' + qty : ''}">
+        <div class="cz-card__img">${art(it)}${qty ? `<span class="cz-card__qty">${qty}</span>` : ''}</div>
+        <div class="cz-card__body">
+          <b>${esc(it.name)}</b>
+          <small>${esc(it.meta || '')}</small>
+          <div class="cz-card__foot">
+            <span class="cz-card__price">${rub(it.price)}</span>
+            ${qty
+              ? `<div class="cz-step"><button type="button" data-cz-dec="${esc(it.id)}" aria-label="Убрать одну">−</button><span>${qty}</span><button type="button" data-cz-inc="${esc(it.id)}" aria-label="Добавить ещё">+</button></div>`
+              : '<span class="cz-card__add" aria-hidden="true">+</span>'}
+          </div>
+        </div>
+      </div>`;
+  }
+
   function renderComposeList() {
-    // ищем только по названию блюда, по началу слов: «фила авок» → «Филадельфия с авокадо»
+    // поиск — по началу слов названия: «фила авок» → «Филадельфия с авокадо»; без поиска — выбранный раздел
     const norm = (t) => t.toLowerCase().replace(/ё/g, 'е');
     const tokens = norm(draft.q).split(/[^a-zа-я0-9]+/).filter(Boolean);
     const nameMatches = (name) => {
       const words = norm(name).split(/[^a-zа-я0-9]+/);
       return tokens.every((t) => words.some((w) => w.startsWith(t)));
     };
-    const list = MENU.flatMap((c) => c.items.map((it) => ({ it, cat: c.id })))
-      .filter(({ it, cat }) => (draft.cat === 'all' || (draft.cat === 'hits' ? (it.tags || []).includes('hit') : cat === draft.cat)) &&
-        (!tokens.length || nameMatches(it.name)));
-    cz.querySelector('[data-cz-list]').innerHTML = list.map(({ it }) => {
-      const qty = draft.items[it.id] || 0;
-      return `
-        <div class="cz-row ${qty ? 'is-in' : ''}">
-          <div class="cz-row__info"><b>${esc(it.name)}</b><span>${esc([it.meta, it.desc].filter(Boolean).join(' · '))}</span></div>
-          <span class="cz-row__price">${rub(it.price)}</span>
-          ${qty
-            ? `<div class="cz-step"><button type="button" data-cz-dec="${esc(it.id)}" aria-label="Убрать одну">−</button><span>${qty}</span><button type="button" data-cz-inc="${esc(it.id)}" aria-label="Добавить ещё">+</button></div>`
-            : `<button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-cz-inc="${esc(it.id)}">Добавить</button>`}
-        </div>`;
-    }).join('') || '<p class="col__empty">Ничего не нашлось</p>';
+    const cat = catById(draft.cat);
+    const list = tokens.length ? MENU.flatMap((c) => c.items).filter((it) => nameMatches(it.name)) : cat.items;
+    cz.querySelectorAll('[data-cz-cat]').forEach((b) => {
+      const on = !tokens.length && b.dataset.czCat === cat.id;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-selected', String(on));
+    });
+    cz.querySelector('[data-cz-title]').textContent = tokens.length ? `Найдено: ${list.length}` : `${cat.title} · ${list.length}`;
+    cz.querySelector('[data-cz-list]').innerHTML = list.map(cardHTML).join('') || '<p class="col__empty">Ничего не нашлось</p>';
+  }
+
+  // изменилось количество — перерисовываем только эту карточку
+  function refreshCard(id) {
+    const el = cz.querySelector(`[data-cz-card="${CSS.escape(id)}"]`);
+    if (el && ITEMS.has(id)) el.outerHTML = cardHTML(ITEMS.get(id));
   }
 
   function findClient(phone) {
@@ -759,7 +802,7 @@
       </dl>
       ${below ? `<p class="cz-warn">Меньше минимальной суммы доставки (${rub(CFG.minOrder)}). Оформить можно, но проверьте с клиентом.</p>` : ''}
       ${draft.promo && !t.promoOk ? '<p class="cz-warn">Такого промокода нет — скидка не применена.</p>' : ''}`
-      : '<p class="cz-empty">Добавьте блюда из меню слева</p>';
+      : '<p class="cz-empty">Нажмите на блюдо в меню — оно появится здесь</p>';
     const btn = cz.querySelector('[data-cz-submit]');
     btn.textContent = draft.sending ? 'Создаём…' : t.lines.length ? `Создать заказ на ${rub(t.total)}` : 'Создать заказ';
     btn.disabled = draft.sending;
@@ -769,7 +812,7 @@
   function setQty(id, delta) {
     const q = (draft.items[id] || 0) + delta;
     if (q <= 0) delete draft.items[id]; else draft.items[id] = Math.min(q, 99);
-    renderComposeList();
+    refreshCard(id);
     renderComposeSide();
   }
 
@@ -831,6 +874,9 @@
     if (k === 'q' || k === 'cat') renderComposeList();
     else if (k === 'method' || k === 'promo') renderComposeSide();
   });
+  cz.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-cz-card]')) { e.preventDefault(); setQty(e.target.dataset.czCard, 1); }
+  });
   cz.addEventListener('change', (e) => {
     const k = e.target.dataset.cz;
     if (!draft || !k) return;
@@ -840,13 +886,27 @@
     else draft[k] = e.target.value;
   });
   cz.addEventListener('click', (e) => {
+    if (!draft) return;
     const t = e.target.closest('button');
-    if (!t || !draft) return;
+    if (!t) {
+      // нажатие на карточку блюда — плюс одна порция
+      const card = e.target.closest('[data-cz-card]');
+      if (card) { e.stopPropagation(); setQty(card.dataset.czCard, 1); }
+      return;
+    }
     e.stopPropagation();
+    if (t.dataset.czCat) {
+      draft.cat = t.dataset.czCat;
+      draft.q = '';
+      cz.querySelector('#cz-q').value = '';
+      renderComposeList();
+      cz.querySelector('[data-cz-list]').scrollTop = 0;
+      return;
+    }
     if (t.hasAttribute('data-compose-close')) return closeCompose();
     if (t.dataset.czInc) return setQty(t.dataset.czInc, 1);
     if (t.dataset.czDec) return setQty(t.dataset.czDec, -1);
-    if (t.dataset.czDel) { delete draft.items[t.dataset.czDel]; renderComposeList(); renderComposeSide(); return; }
+    if (t.dataset.czDel) { const id = t.dataset.czDel; delete draft.items[id]; refreshCard(id); renderComposeSide(); return; }
     if (t.hasAttribute('data-cz-submit')) return submitCompose();
     if (t.dataset.czFill) {
       const c = clients().find((x) => x.key === t.dataset.czFill);

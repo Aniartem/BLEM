@@ -653,6 +653,7 @@
       .rv-demo__tab[hidden] { display: none; }
       .rv-demo--right { left: auto; right: max(16px, env(safe-area-inset-right, 0px)); }
       .rv-demo--right .rv-demo__card { left: auto; right: 0; }
+      #crm:has(.crm-compose:not([hidden])) .rv-demo, #crm:has(.crm-drawer.is-open) .rv-demo { display: none; }
       @media (max-width: 700px) { .rv-demo:not(.rv-demo--right) { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } .rv-demo.is-typing .rv-demo__tab { display: none; } }
       .rv-demo__tab { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: #c9a45c; color: #17130c; cursor: pointer; font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.15) inset; }
       .rv-demo__tab:hover { filter: brightness(1.06); }
