@@ -498,7 +498,7 @@
       <div class="cz-body">
         <section class="cz-menu">
           <div class="cz-menu__tools">
-            <input id="cz-q" type="search" placeholder="Блюдо или ингредиент" data-cz="q" autocomplete="off">
+            <input id="cz-q" type="search" placeholder="Название блюда" data-cz="q" autocomplete="off">
             <select id="cz-cat" data-cz="cat"><option value="all">Все разделы</option><option value="hits">Хиты</option>${cats}</select>
           </div>
           <div class="cz-list" data-cz-list></div>
@@ -551,11 +551,16 @@
   }
 
   function renderComposeList() {
-    const q = draft.q.trim().toLowerCase();
+    // ищем только по названию блюда, по началу слов: «фила авок» → «Филадельфия с авокадо»
+    const norm = (t) => t.toLowerCase().replace(/ё/g, 'е');
+    const tokens = norm(draft.q).split(/[^a-zа-я0-9]+/).filter(Boolean);
+    const nameMatches = (name) => {
+      const words = norm(name).split(/[^a-zа-я0-9]+/);
+      return tokens.every((t) => words.some((w) => w.startsWith(t)));
+    };
     const list = MENU.flatMap((c) => c.items.map((it) => ({ it, cat: c.id })))
       .filter(({ it, cat }) => (draft.cat === 'all' || (draft.cat === 'hits' ? (it.tags || []).includes('hit') : cat === draft.cat)) &&
-        (!q || (it.name + ' ' + it.desc).toLowerCase().includes(q)))
-      .slice(0, 120);
+        (!tokens.length || nameMatches(it.name)));
     cz.querySelector('[data-cz-list]').innerHTML = list.map(({ it }) => {
       const qty = draft.items[it.id] || 0;
       return `
