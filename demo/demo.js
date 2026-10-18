@@ -622,7 +622,7 @@
       .rv-demo__tab[hidden] { display: none; }
       .rv-demo--right { left: auto; right: max(16px, env(safe-area-inset-right, 0px)); }
       .rv-demo--right .rv-demo__card { left: auto; right: 0; }
-      @media (max-width: 700px) { .rv-demo:not(.rv-demo--right) { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } }
+      @media (max-width: 700px) { .rv-demo:not(.rv-demo--right) { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } .rv-demo.is-typing { display: none; } }
       .rv-demo__tab { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: #c9a45c; color: #17130c; cursor: pointer; font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.15) inset; }
       .rv-demo__tab:hover { filter: brightness(1.06); }
       .rv-demo__tab i { width: 8px; height: 8px; border-radius: 50%; background: #17130c; opacity: .35; }
@@ -670,6 +670,9 @@
     const crmRoot = document.getElementById('crm');
     if (crmRoot) el.classList.add('rv-demo--right'); // в CRM слева внизу — карточка сотрудника
     (crmRoot || document.body).appendChild(el); // CRM скрывает всё, что вне #crm
+    // на телефоне кнопка не закрывает поле, в которое сейчас вписывают
+    document.addEventListener('focusin', (e) => { el.classList.toggle('is-typing', !el.contains(e.target) && e.target.matches('input, textarea, select')); });
+    document.addEventListener('focusout', () => { setTimeout(() => { if (!document.activeElement || !document.activeElement.matches('input, textarea, select')) el.classList.remove('is-typing'); }); });
     const status = el.querySelector('[data-demo-status]');
     ready.then(() => {
       status.className = 'rv-demo__status is-ok';

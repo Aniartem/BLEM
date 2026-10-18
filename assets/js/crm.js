@@ -869,6 +869,143 @@
     qTimer = setTimeout(() => { state.q = e.target.value; render(); }, 150);
   });
 
+  // ---------- Поле с подсказками: вписываешь начало названия — выбираешь из списка ----------
+  // Разметка: combo.html(...). Выбранное значение лежит в скрытом поле с переданными атрибутами;
+  // при выборе на нём срабатывают события input и change, как у обычного select.
+  const comboSources = {};   // имя → () => [{ value, label, hint }]
+  const normText = (t) => String(t || '').toLowerCase().replace(/ё/g, 'е');
+  const combo = {
+    source(name, fn) { comboSources[name] = fn; },
+    html({ source, value = '', attrs = '', placeholder = 'Начните вписывать название', label = 'Выбор', empty = '' }) {
+      const item = value !== '' && (comboSources[source] ? comboSources[source]() : []).find((x) => String(x.value) === String(value));
+      return `<div class="combo" data-combo="${esc(source)}" data-empty="${esc(empty)}">` +
+        `<input type="text" class="combo__input" value="${esc(item ? item.label : '')}" placeholder="${esc(placeholder)}" aria-label="${esc(label)}" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false" enterkeyhint="done">` +
+        `<input type="hidden" ${attrs} value="${esc(item ? item.value : '')}"></div>`;
+    },
+    // выставить значение из кода (например, «Списать» у партии)
+    set(el, value) {
+      const box = el.closest('[data-combo]') || el;
+      const item = (comboSources[box.dataset.combo] || (() => []))().find((x) => String(x.value) === String(value));
+      box.querySelector('.combo__input').value = item ? item.label : '';
+      box.querySelector('input[type="hidden"]').value = item ? item.value : '';
+    }
+  };
+  // совпадения — слова, которые начинаются с вписанного: «ло» → «Лосось…», потом «Икра лосося»
+  function comboMatches(items, q) {
+    const tokens = normText(q).split(/[^a-zа-я0-9]+/).filter(Boolean);
+    if (!tokens.length) return items.slice();
+    return items.map((it) => {
+      const name = normText(it.label);
+      const words = name.split(/[^a-zа-я0-9]+/);
+      if (!tokens.every((t) => words.some((w) => w.startsWith(t)))) return null;
+      const score = name.startsWith(tokens[0]) ? 0 : 1;
+      return { it, score };
+    }).filter(Boolean).sort((a, b) => a.score - b.score || a.it.label.localeCompare(b.it.label, 'ru')).map((x) => x.it);
+  }
+  let comboOpen = null; // { box, list, items, active }
+  const comboList = document.createElement('div');
+  comboList.className = 'combo__list';
+  comboList.setAttribute('role', 'listbox');
+  comboList.hidden = true;
+  root.appendChild(comboList);
+  function comboPlace() {
+    if (!comboOpen) return;
+    const r = comboOpen.box.querySelector('.combo__input').getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+    const up = below < 180 && above > below;
+    comboList.style.left = Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 240) - 8)) + 'px';
+    comboList.style.width = Math.max(r.width, 240) + 'px';
+    comboList.style.maxHeight = Math.max(140, Math.min(320, up ? above : below)) + 'px';
+    comboList.style.top = up ? '' : (r.bottom + 6) + 'px';
+    comboList.style.bottom = up ? (window.innerHeight - r.top + 6) + 'px' : '';
+  }
+  function comboRender() {
+    const { box, items, active } = comboOpen;
+    comboList.innerHTML = items.length
+      ? items.slice(0, 60).map((it, i) => `<div class="combo__opt ${i === active ? 'is-active' : ''}" role="option" data-combo-i="${i}"><b>${esc(it.label)}</b>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}</div>`).join('')
+      : `<p class="combo__empty">Ничего не нашлось${box.dataset.empty ? '. ' + esc(box.dataset.empty) : ''}</p>`;
+    const act = comboList.querySelector('.is-active');
+    if (act) act.scrollIntoView({ block: 'nearest' });
+  }
+  function comboShow(box) {
+    const input = box.querySelector('.combo__input');
+    const all = (comboSources[box.dataset.combo] || (() => []))();
+    const hidden = box.querySelector('input[type="hidden"]');
+    // уже выбрано и текст не меняли — показываем весь список
+    const chosen = all.find((x) => String(x.value) === hidden.value);
+    const q = chosen && chosen.label === input.value ? '' : input.value;
+    comboOpen = { box, items: comboMatches(all, q), active: q ? 0 : -1 };
+    input.setAttribute('aria-expanded', 'true');
+    comboList.hidden = false;
+    comboRender();
+    comboPlace();
+  }
+  function comboHide() {
+    if (!comboOpen) return;
+    comboOpen.box.querySelector('.combo__input').setAttribute('aria-expanded', 'false');
+    comboOpen = null;
+    comboList.hidden = true;
+  }
+  function comboPick(box, item) {
+    const input = box.querySelector('.combo__input'), hidden = box.querySelector('input[type="hidden"]');
+    input.value = item ? item.label : input.value;
+    const was = hidden.value;
+    hidden.value = item ? item.value : '';
+    comboHide();
+    if (was !== hidden.value) {
+      hidden.dispatchEvent(new Event('input', { bubbles: true }));
+      hidden.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  root.addEventListener('focusin', (e) => { if (e.target.matches('.combo__input')) { e.target.select(); comboShow(e.target.closest('[data-combo]')); } });
+  root.addEventListener('input', (e) => {
+    if (!e.target.matches('.combo__input')) return;
+    const box = e.target.closest('[data-combo]');
+    const hidden = box.querySelector('input[type="hidden"]');
+    if (hidden.value) { hidden.value = ''; hidden.dispatchEvent(new Event('input', { bubbles: true })); hidden.dispatchEvent(new Event('change', { bubbles: true })); }
+    comboShow(box);
+  });
+  root.addEventListener('keydown', (e) => {
+    if (!e.target.matches('.combo__input')) return;
+    if (!comboOpen) { if (e.key === 'Enter') e.preventDefault(); return; } // Enter в поле не отправляет форму
+    const o = comboOpen;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = Math.min(o.items.length, 60);
+      if (!n) return;
+      o.active = e.key === 'ArrowDown' ? (o.active + 1) % n : (o.active - 1 + n) % n;
+      comboRender();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const it = o.items[o.active >= 0 ? o.active : 0];
+      if (it) comboPick(o.box, it);
+    } else if (e.key === 'Escape') { e.stopPropagation(); comboHide(); }
+  });
+  root.addEventListener('focusout', (e) => {
+    if (!e.target.matches('.combo__input')) return;
+    const box = e.target.closest('[data-combo]');
+    setTimeout(() => {
+      if (box.contains(document.activeElement)) return;
+      // ушли из поля, не выбрав: если вписанное однозначно — выбираем само
+      const hidden = box.querySelector('input[type="hidden"]');
+      if (!hidden.value && e.target.value.trim()) {
+        const all = (comboSources[box.dataset.combo] || (() => []))();
+        const exact = all.find((x) => normText(x.label) === normText(e.target.value.trim()));
+        const m = exact ? [exact] : comboMatches(all, e.target.value);
+        if (m.length === 1) comboPick(box, m[0]);
+      }
+      if (comboOpen && comboOpen.box === box) comboHide();
+    }, 150);
+  });
+  // выбор пальцем или мышью: mousedown, чтобы поле не потеряло фокус раньше времени
+  comboList.addEventListener('mousedown', (e) => e.preventDefault());
+  comboList.addEventListener('click', (e) => {
+    const opt = e.target.closest('[data-combo-i]');
+    if (opt && comboOpen) comboPick(comboOpen.box, comboOpen.items[Number(opt.dataset.comboI)]);
+  });
+  window.addEventListener('resize', comboPlace);
+  window.addEventListener('scroll', (e) => { if (comboOpen && !comboList.contains(e.target)) comboPlace(); }, true);
+
   // ---------- Дополнительные вкладки (касса и смены — crm-shifts.js) ----------
   const extraViews = {};
   window.RollevichCRM = {
@@ -911,6 +1048,7 @@
     render: () => { if (isCrmRoute()) render(); },
     toast,
     icon,
+    combo,
     h: { esc, rub, hhmm, dateShort, plural, ago, pad }
   };
 

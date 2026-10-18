@@ -136,14 +136,9 @@
     fresh.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function productOptions(sel) {
-    const cats = [...new Set(S.data.products.map((p) => p.category))];
-    return `<option value="">— сырьё —</option>` + cats.map((c) => `<optgroup label="${esc(c)}">${S.data.products.filter((p) => p.category === c).map((p) => `<option value="${p.id}" ${Number(sel) === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</optgroup>`).join('');
-  }
-  function dishOptions(sel) {
-    const cats = [...new Set(S.data.dishes.map((d) => d.category))];
-    return `<option value="">— блюдо из меню —</option>` + cats.map((c) => `<optgroup label="${esc(c)}">${S.data.dishes.filter((d) => d.category === c && d.id !== S.open).map((d) => `<option value="${esc(d.id)}" ${sel === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</optgroup>`).join('');
-  }
+  // списки для полей с подсказками: вписываешь начало названия — выбираешь
+  CRM.combo.source('tc-products', () => (S.data ? S.data.products.map((p) => ({ value: String(p.id), label: p.name, hint: p.category })) : []));
+  CRM.combo.source('tc-dishes', () => (S.data ? S.data.dishes.filter((d) => d.id !== S.open).map((d) => ({ value: d.id, label: d.name, hint: d.category })) : []));
 
   function lineHTML(l, i) {
     const admin = isAdmin();
@@ -153,7 +148,11 @@
     return `
       <tr data-tc-line="${i}">
         <td><span class="tc-kind">${isDish ? 'Блюдо' : 'Сырьё'}</span></td>
-        <td><select data-f="ref" aria-label="${isDish ? 'Блюдо' : 'Сырьё'}">${isDish ? dishOptions(l.ref) : productOptions(l.ref)}</select></td>
+        <td>${CRM.combo.html({
+          source: isDish ? 'tc-dishes' : 'tc-products', value: l.ref, attrs: 'data-f="ref"', label: isDish ? 'Блюдо' : 'Сырьё',
+          placeholder: isDish ? 'Начните вписывать блюдо' : 'Начните вписывать сырьё',
+          empty: isDish ? '' : 'Нет нужного — попросите управляющего добавить его во вкладке «Склад»'
+        })}</td>
         <td class="tc-qty"><input data-f="shown" inputmode="decimal" value="${esc(l.shown)}" aria-label="Количество" autocomplete="off"><span>${esc(unit)}</span></td>
         ${admin ? `<td class="r" data-line-cost>${lineCost(l)}</td>` : ''}
         <td><button type="button" class="cz-del" data-tc-del="${i}" aria-label="Убрать строку">×</button></td>
@@ -287,7 +286,7 @@
         S.dirty = true;
         redrawLines(box);
         const rows = box.querySelectorAll('[data-tc-line]');
-        rows[rows.length - 1].querySelector('select').focus();
+        rows[rows.length - 1].querySelector('.combo__input').focus();
         return;
       }
       if (t.dataset.tcDel !== undefined) { S.draft.lines.splice(Number(t.dataset.tcDel), 1); S.dirty = true; redrawLines(box); return; }
@@ -307,7 +306,15 @@
       const row = e.target.closest('[data-tc-line]');
       if (row) {
         const l = S.draft.lines[Number(row.dataset.tcLine)];
-        if (f === 'ref') { l.ref = e.target.value; redrawLines(box); return; }
+        if (f === 'ref') {
+          l.ref = e.target.value;
+          if (!l.ref) return; // начали вписывать заново — ждём выбора
+          const i = row.dataset.tcLine;
+          redrawLines(box);
+          const qty = box.querySelector(`[data-tc-line="${i}"] [data-f="shown"]`);
+          if (qty) qty.focus(); // выбрали — сразу вписываем граммовку
+          return;
+        }
         l.shown = e.target.value;
         const c = row.querySelector('[data-line-cost]');
         if (c) c.textContent = lineCost(l);
@@ -316,7 +323,7 @@
     });
     form.addEventListener('change', (e) => {
       const row = e.target.closest('[data-tc-line]');
-      if (row && e.target.dataset.f === 'ref') { S.draft.lines[Number(row.dataset.tcLine)].ref = e.target.value; S.dirty = true; redrawLines(box); }
+      if (row && e.target.dataset.f === 'ref') { S.draft.lines[Number(row.dataset.tcLine)].ref = e.target.value; S.dirty = true; }
     });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();

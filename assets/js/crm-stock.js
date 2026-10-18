@@ -235,15 +235,11 @@
   }
 
   // ---------- Формы: приход и списание ----------
-  function productOptions() {
-    return S.data.categories.map((c) => {
-      const items = S.data.products.filter((p) => p.active && p.category === c);
-      return items.length ? `<optgroup label="${esc(c)}">${items.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</optgroup>` : '';
-    }).join('');
-  }
+  // поле «Сырьё»: вписываешь начало названия — выбираешь из подходящих
+  CRM.combo.source('stock-products', () => (S.data ? S.data.products.filter((p) => p.active).map((p) => ({ value: String(p.id), label: p.name, hint: `${qtyText(p.qty)} ${p.unit}` })) : []));
 
   function lineHTML(kind) {
-    const select = `<label><small>Сырьё</small><select name="product" aria-label="Сырьё"><option value="">Выберите сырьё</option>${productOptions()}</select><span class="line__hint" data-stock-now></span></label>`;
+    const select = `<div>${CRM.combo.html({ source: 'stock-products', attrs: 'name="product"', label: 'Сырьё', placeholder: 'Начните вписывать сырьё', empty: 'Новое сырьё добавляется в «Склад» → «Остатки» → «+ Сырьё»' })}<span class="line__hint" data-stock-now></span></div>`;
     const qty = '<label class="line__qty"><small>Количество</small><input name="qty" inputmode="decimal" placeholder="Сколько" aria-label="Количество" autocomplete="off"><span data-unit></span></label>';
     const del = '<button type="button" class="cz-del" data-line-del aria-label="Убрать строку">×</button>';
     if (kind === 'receipt') {
@@ -400,7 +396,7 @@
     const lines = form.querySelector('[data-lines]');
     let line = [...lines.querySelectorAll('[data-line]')].find((l) => !l.querySelector('[name="product"]').value);
     if (!line) { lines.insertAdjacentHTML('beforeend', lineHTML('writeoff')); line = lines.lastElementChild; }
-    line.querySelector('[name="product"]').value = String(productId);
+    CRM.combo.set(line.querySelector('[data-combo]'), productId);
     line.querySelector('[name="qty"]').value = qtyText(qty);
     updateDocForm(form);
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -476,7 +472,7 @@
       if (t.hasAttribute('data-line-add')) {
         const lines = t.closest('form').querySelector('[data-lines]');
         lines.insertAdjacentHTML('beforeend', lineHTML(kindOf(box)));
-        lines.lastElementChild.querySelector('select').focus();
+        lines.lastElementChild.querySelector('.combo__input').focus();
         return;
       }
       if (t.hasAttribute('data-line-del')) {
