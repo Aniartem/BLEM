@@ -25,10 +25,13 @@ function loadEnvFile(file) {
 
 function config(env = process.env) {
   const publicUrl = (env.PUBLIC_URL || '').replace(/\/+$/, '');
+  const dataDir = env.DATA_DIR || path.join(ROOT, 'data');
   return {
     port: Number(env.PORT || 3000),
     host: env.HOST || '127.0.0.1',
-    dbFile: env.DB_FILE || path.join(env.DATA_DIR || path.join(ROOT, 'data'), 'rollevich.db'),
+    dbFile: env.DB_FILE || path.join(dataDir, 'rollevich.db'),
+    photoDir: env.PHOTO_DIR || path.join(dataDir, 'photos'),
+    photoDays: Number(env.PHOTO_RETENTION_DAYS || 90),
     publicUrl,
     secureCookies: publicUrl.startsWith('https://'),
     trustProxy: env.TRUST_PROXY === '1',
@@ -71,7 +74,7 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy': [
     "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src https://fonts.gstatic.com", "img-src 'self' data:", "connect-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'"
+    "font-src https://fonts.gstatic.com", "img-src 'self' data: blob:", "media-src 'self' blob:", "connect-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'"
   ].join('; ')
 };
 
@@ -118,7 +121,7 @@ function createApp(cfg, { log = console } = {}) {
     for (const res of clients) res.write(msg);
   }
   const broadcast = (order) => broadcastEvent('order', order);
-  const shifts = createShifts({ db, secureCookies: cfg.secureCookies, broadcast: broadcastEvent, tg, timeZone: cfg.timeZone, log });
+  const shifts = createShifts({ db, secureCookies: cfg.secureCookies, broadcast: broadcastEvent, tg, timeZone: cfg.timeZone, photoDir: cfg.photoDir, photoDays: cfg.photoDays, log });
 
   async function setStatus(id, status, by) {
     if (!STATUS[status]) throw Object.assign(new Error('Неизвестный статус'), { status: 400 });
@@ -171,7 +174,7 @@ function createApp(cfg, { log = console } = {}) {
       send(res, 201, { id: order.id, number: order.number, total: order.total });
     },
 
-    // Заказ, принятый оператором по телефону: без лимита частоты, сразу со статусом и автором
+    // Заказ, принятый администратором по телефону: без лимита частоты, сразу со статусом и автором
     'POST /api/staff/orders': async (req, res) => {
       const user = staff(req, res);
       if (!user) return;
@@ -293,6 +296,7 @@ function createApp(cfg, { log = console } = {}) {
     server,
     db,
     tg,
+    shifts,
     setStatus,
     start() {
       tg.start(setStatus);

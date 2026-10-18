@@ -1,12 +1,16 @@
 'use strict';
-// Смены: табель сотрудников (отметка по ПИН-коду на планшете) и кассовые смены.
+// Смены: табель сотрудников (отметка по ПИН-коду и фото на планшете) и кассовые смены.
+// Все, кто входит в CRM, — администраторы: им доступны деньги, табель и зарплаты.
 // Кассовая смена здесь — учёт денег в CRM. Фискальная смена на онлайн-кассе (54-ФЗ)
 // подключается отдельно, под выбранную модель кассы.
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { parseCookies } = require('./auth');
 
 const DEVICE_COOKIE = 'rv_device';
-const ROLES = ['Повар', 'Сушист', 'Курьер', 'Кассир', 'Оператор', 'Администратор', 'Другое'];
+const ROLES = ['Повар', 'Кухонный работник', 'Технический персонал', 'Водитель-курьер', 'Администратор'];
+const MAX_PHOTO = 1024 * 1024;
 const PAYMENT_KIND = { 'Наличными': 'cash', 'Картой курьеру': 'card', 'СБП': 'sbp' };
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -32,7 +36,9 @@ function setupSchema(raw) {
       employee_id INTEGER NOT NULL REFERENCES employees(id),
       started_at  INTEGER NOT NULL,
       ended_at    INTEGER,
-      closed_by   TEXT
+      closed_by   TEXT,
+      start_photo TEXT,
+      end_photo   TEXT
     );
     CREATE INDEX IF NOT EXISTS work_shifts_started ON work_shifts(started_at);
     CREATE UNIQUE INDEX IF NOT EXISTS work_shifts_one_open ON work_shifts(employee_id) WHERE ended_at IS NULL;
@@ -66,10 +72,24 @@ function setupSchema(raw) {
       by_name  TEXT NOT NULL
     );
   `);
+  // миграция для баз, созданных до фото
+  const cols = raw.prepare('PRAGMA table_info(work_shifts)').all().map((c) => c.name);
+  if (!cols.includes('start_photo')) raw.exec('ALTER TABLE work_shifts ADD COLUMN start_photo TEXT; ALTER TABLE work_shifts ADD COLUMN end_photo TEXT;');
 }
 
-function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone, log = console }) {
+// Фото с планшета: data:image/jpeg;base64,… → Buffer. null — фото нет, false — фото испорчено
+function decodePhoto(v) {
+  if (!v) return null;
+  const b64 = String(v).replace(/^data:image\/jpeg;base64,/, '');
+  if (!/^[A-Za-z0-9+/=]+$/.test(b64)) return false;
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.length < 500 || buf.length > MAX_PHOTO || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) return false;
+  return buf;
+}
+
+function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone, photoDir, photoDays = 90, log = console }) {
   setupSchema(raw);
+  if (photoDir) fs.mkdirSync(photoDir, { recursive: true });
 
   // ПИН не хранится в открытом виде: HMAC с секретом сервера (секрет создаётся при первом запуске)
   let secret = db.kvGet('pin_secret');
@@ -86,12 +106,16 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
 
     openShiftOf: raw.prepare('SELECT id, started_at FROM work_shifts WHERE employee_id = ? AND ended_at IS NULL'),
     startShift: raw.prepare('INSERT INTO work_shifts (employee_id, started_at) VALUES (?, ?)'),
+    setStartPhoto: raw.prepare('UPDATE work_shifts SET start_photo = ? WHERE id = ?'),
+    setEndPhoto: raw.prepare('UPDATE work_shifts SET end_photo = ? WHERE id = ?'),
+    oldPhotos: raw.prepare('SELECT id, start_photo, end_photo FROM work_shifts WHERE started_at < ? AND (start_photo IS NOT NULL OR end_photo IS NOT NULL)'),
+    clearPhotos: raw.prepare('UPDATE work_shifts SET start_photo = NULL, end_photo = NULL WHERE id = ?'),
     endShift: raw.prepare('UPDATE work_shifts SET ended_at = ?, closed_by = ? WHERE id = ? AND ended_at IS NULL'),
     workShift: raw.prepare('SELECT * FROM work_shifts WHERE id = ?'),
-    onShift: raw.prepare(`SELECT w.id, w.started_at, e.id AS employee_id, e.name, e.role
+    onShift: raw.prepare(`SELECT w.id, w.started_at, w.start_photo, e.id AS employee_id, e.name, e.role
                           FROM work_shifts w JOIN employees e ON e.id = w.employee_id
                           WHERE w.ended_at IS NULL ORDER BY w.started_at`),
-    shiftsBetween: raw.prepare(`SELECT w.id, w.employee_id, w.started_at, w.ended_at, w.closed_by, e.name, e.role, e.rate
+    shiftsBetween: raw.prepare(`SELECT w.id, w.employee_id, w.started_at, w.ended_at, w.closed_by, w.start_photo, w.end_photo, e.name, e.role, e.rate
                                 FROM work_shifts w JOIN employees e ON e.id = w.employee_id
                                 WHERE w.started_at < ? AND COALESCE(w.ended_at, ?) > ? ORDER BY w.started_at DESC`),
 
@@ -109,13 +133,29 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
 
   // ---------- Табель ----------
   function onShiftNow() {
-    return q.onShift.all().map((r) => ({ shiftId: r.id, employeeId: r.employee_id, name: r.name, role: r.role, startedAt: r.started_at }));
+    return q.onShift.all().map((r) => ({ shiftId: r.id, employeeId: r.employee_id, name: r.name, role: r.role, startedAt: r.started_at, startPhoto: !!r.start_photo }));
   }
 
   function notifyTimeclock() { broadcast('timeclock', { onShift: onShiftNow() }); }
 
+  // Фото хранится файлом: <photoDir>/2026-10/<id смены>-start.jpg
+  function savePhoto(shiftId, kind, buf) {
+    if (!buf || !photoDir) return null;
+    const month = new Date().toISOString().slice(0, 7);
+    const rel = `${month}/${shiftId}-${kind}.jpg`;
+    try {
+      fs.mkdirSync(path.join(photoDir, month), { recursive: true });
+      fs.writeFileSync(path.join(photoDir, rel), buf);
+      (kind === 'start' ? q.setStartPhoto : q.setEndPhoto).run(rel, shiftId);
+      return rel;
+    } catch (e) {
+      log.error('[photo] не удалось сохранить фото:', e.message);
+      return null;
+    }
+  }
+
   // Отметка по ПИН: нет открытой смены — начинает, есть — заканчивает
-  function punch(pin) {
+  function punch(pin, photo) {
     const emp = q.employeeByPin.get(pinKey(pin));
     if (!emp || !emp.active) return null;
     const open = q.openShiftOf.get(emp.id);
@@ -123,16 +163,30 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
     let result;
     if (open) {
       q.endShift.run(now, emp.name, open.id);
-      result = { action: 'end', name: emp.name, role: emp.role, startedAt: open.started_at, endedAt: now, minutes: Math.round((now - open.started_at) / 60000) };
+      const saved = savePhoto(open.id, 'end', photo);
+      result = { action: 'end', name: emp.name, role: emp.role, startedAt: open.started_at, endedAt: now, minutes: Math.round((now - open.started_at) / 60000), photo: !!saved };
     } else {
-      q.startShift.run(emp.id, now);
-      result = { action: 'start', name: emp.name, role: emp.role, startedAt: now };
+      const id = Number(q.startShift.run(emp.id, now).lastInsertRowid);
+      const saved = savePhoto(id, 'start', photo);
+      result = { action: 'start', name: emp.name, role: emp.role, startedAt: now, photo: !!saved };
     }
     notifyTimeclock();
     return result;
   }
 
-  function timesheet(from, to, withPay) {
+  // Старые фото удаляются автоматически (по умолчанию через 90 дней)
+  function purgePhotos() {
+    if (!photoDir) return;
+    for (const r of q.oldPhotos.all(Date.now() - photoDays * 864e5)) {
+      for (const rel of [r.start_photo, r.end_photo]) if (rel) fs.rmSync(path.join(photoDir, rel), { force: true });
+      q.clearPhotos.run(r.id);
+    }
+  }
+  purgePhotos();
+  const purgeTimer = setInterval(purgePhotos, 864e5);
+  purgeTimer.unref();
+
+  function timesheet(from, to) {
     const now = Date.now();
     const rows = q.shiftsBetween.all(to, now, from);
     const shifts = rows.map((r) => {
@@ -142,15 +196,15 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
       return {
         id: r.id, employeeId: r.employee_id, name: r.name, role: r.role,
         startedAt: r.started_at, endedAt: r.ended_at, closedBy: r.closed_by, minutes,
-        ...(withPay ? { pay: Math.round((minutes / 60) * r.rate) } : {})
+        startPhoto: !!r.start_photo, endPhoto: !!r.end_photo, pay: Math.round((minutes / 60) * r.rate)
       };
     });
     const byEmployee = new Map();
     for (const s of shifts) {
-      const e = byEmployee.get(s.employeeId) || { employeeId: s.employeeId, name: s.name, role: s.role, shifts: 0, minutes: 0, ...(withPay ? { pay: 0 } : {}) };
+      const e = byEmployee.get(s.employeeId) || { employeeId: s.employeeId, name: s.name, role: s.role, shifts: 0, minutes: 0, pay: 0 };
       e.shifts += 1;
       e.minutes += s.minutes;
-      if (withPay) e.pay += s.pay;
+      e.pay += s.pay;
       byEmployee.set(s.employeeId, e);
     }
     return { from, to, shifts, employees: [...byEmployee.values()].sort((a, b) => b.minutes - a.minutes) };
@@ -216,12 +270,7 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
   const pinFailed = (key) => pinTries.get(key).push(Date.now());
 
   function routes({ send, readJson, staff, sameOrigin }) {
-    const admin = (req, res) => {
-      const user = staff(req, res);
-      if (!user) return null;
-      if (user.role !== 'admin') { send(res, 403, { error: 'Это может сделать только администратор' }); return null; }
-      return user;
-    };
+    const admin = staff; // все пользователи CRM — администраторы
     const mutating = (fn) => async (req, res, url, m) => {
       if (!sameOrigin(req)) return send(res, 403, { error: 'Запрос с чужого сайта' });
       return fn(req, res, url, m);
@@ -241,8 +290,10 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
           if (!device) return send(res, 401, { error: 'Планшет не подключён' });
           const key = parseCookies(req.headers.cookie)[DEVICE_COOKIE];
           if (!pinAllowed(key)) return send(res, 429, { error: 'Слишком много неверных ПИН-кодов. Подождите 5 минут.' });
-          const body = await readJson(req, 1024);
-          const result = validPin(body.pin) ? punch(body.pin) : null;
+          const body = await readJson(req, 1.5 * 1024 * 1024);
+          const photo = decodePhoto(body.photo);
+          if (photo === false) return send(res, 422, { error: 'Фото не получилось. Попробуйте ещё раз.' });
+          const result = validPin(body.pin) ? punch(body.pin, photo) : null;
           if (!result) { pinFailed(key); return send(res, 404, { error: 'Неверный ПИН-код' }); }
           send(res, 200, result);
         }),
@@ -254,7 +305,7 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
           const now = Date.now();
           const from = Number(url.searchParams.get('from')) || now - 864e5;
           const to = Number(url.searchParams.get('to')) || now;
-          send(res, 200, { onShift: onShiftNow(), ...timesheet(from, Math.max(to, from), user.role === 'admin') });
+          send(res, 200, { onShift: onShiftNow(), ...timesheet(from, Math.max(to, from)) });
         },
         'POST /api/staff/devices': mutating(async (req, res) => {
           const user = admin(req, res);
@@ -271,16 +322,17 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
         'GET /api/staff/employees': (req, res) => {
           const user = staff(req, res);
           if (!user) return;
-          const list = q.employees.all().map((e) => ({ id: e.id, name: e.name, role: e.role, active: !!e.active, ...(user.role === 'admin' ? { rate: e.rate } : {}) }));
+          const list = q.employees.all().map((e) => ({ id: e.id, name: e.name, role: e.role, active: !!e.active, rate: e.rate }));
           send(res, 200, { employees: list, roles: ROLES });
         },
         'POST /api/staff/employees': mutating(async (req, res) => {
           if (!admin(req, res)) return;
           const body = await readJson(req, 2048);
           const name = clean(body.name, 60);
-          const role = ROLES.includes(body.role) ? body.role : 'Другое';
+          const role = body.role;
           const rate = money(body.rate || 0);
           if (!name) return send(res, 422, { error: 'Укажите имя', field: 'name' });
+          if (!ROLES.includes(role)) return send(res, 422, { error: 'Выберите должность', field: 'role' });
           if (!validPin(body.pin)) return send(res, 422, { error: 'ПИН-код — от 4 до 6 цифр', field: 'pin' });
           if (rate === null) return send(res, 422, { error: 'Неверная ставка', field: 'rate' });
           try {
@@ -375,6 +427,18 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
           if (!active) { const open = q.openShiftOf.get(emp.id); if (open) { q.endShift.run(Date.now(), 'увольнение', open.id); notifyTimeclock(); } }
           send(res, 200, { employee: { id: emp.id, name, role, rate, active: !!active } });
         })],
+        [/^\/api\/staff\/photos\/(\d+)\/(start|end)$/, 'GET', (req, res, url, m) => {
+          if (!staff(req, res)) return;
+          const shift = q.workShift.get(Number(m[1]));
+          const rel = shift && (m[2] === 'start' ? shift.start_photo : shift.end_photo);
+          if (!rel || !photoDir) return send(res, 404, { error: 'Фото нет' });
+          const file = path.join(photoDir, rel);
+          fs.readFile(file, (err, buf) => {
+            if (err) return send(res, 404, { error: 'Фото нет' });
+            res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+            res.end(buf);
+          });
+        }],
         [/^\/api\/staff\/work-shifts\/(\d+)\/close$/, 'POST', mutating(async (req, res, url, m) => {
           const user = admin(req, res);
           if (!user) return;
@@ -389,7 +453,7 @@ function createShifts({ db, raw = db.raw, secureCookies, broadcast, tg, timeZone
     };
   }
 
-  return { routes, punch, onShiftNow, ROLES, DEVICE_COOKIE };
+  return { routes, punch, onShiftNow, purgePhotos, ROLES, DEVICE_COOKIE };
 }
 
 const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

@@ -25,6 +25,10 @@
       </div>
 
       <div class="tc-entry" data-entry>
+        <div class="tc-cam">
+          <video data-video autoplay playsinline muted></video>
+          <span class="tc-cam__note" data-cam-note>Включаем камеру…</span>
+        </div>
         <p class="tc-hint" data-hint>Введите ваш ПИН-код, чтобы начать или закончить смену</p>
         <div class="tc-dots" data-dots aria-live="polite"></div>
         <div class="tc-keys" role="group" aria-label="Цифры ПИН-кода">
@@ -44,12 +48,14 @@
 
   <div class="tc-result" data-result hidden>
     <div class="tc-result__box">
+      <img class="tc-result__photo" data-result-photo alt="" hidden>
       <div class="tc-result__icon" data-result-icon></div>
       <h2 data-result-title></h2>
       <p data-result-text></p>
     </div>
   </div>
 
+  <canvas data-canvas hidden></canvas>
   <script src="assets/js/smena.js"></script>
 </body>
 </html>

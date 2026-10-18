@@ -3,6 +3,9 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createApp } = require('../server');
 const { hashPassword } = require('../auth');
 
@@ -19,7 +22,11 @@ const fakeTg = http.createServer((req, res) => {
   });
 });
 
-let app, base, admin, oper;
+let app, base, admin, admin2;
+const photoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-photos-'));
+// маленький настоящий JPEG (1×1) с «хвостом», чтобы пройти проверку размера
+const JPEG = Buffer.concat([Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64'), Buffer.alloc(600, 0)]);
+const photo = 'data:image/jpeg;base64,' + JPEG.toString('base64');
 const silent = { log() {}, error() {} };
 let ip = 0;
 function api(method, path, body, headers = {}) {
@@ -44,42 +51,42 @@ before(async () => {
   await new Promise((r) => fakeTg.listen(0, '127.0.0.1', r));
   app = createApp({
     port: 0, host: '127.0.0.1', dbFile: ':memory:', publicUrl: '', secureCookies: false, trustProxy: true, timeZone: 'Europe/Samara',
-    telegram: { token: 'T', chatIds: ['1'], apiBase: `http://127.0.0.1:${fakeTg.address().port}` }
+    telegram: { token: 'T', chatIds: ['1'], apiBase: `http://127.0.0.1:${fakeTg.address().port}` },
+    photoDir, photoDays: 90
   }, { log: silent });
   base = `http://127.0.0.1:${(await app.start()).port}`;
-  app.db.addUser('boss', 'Анна (админ)', hashPassword('boss-pass-1'), 'admin');
-  app.db.addUser('kassa', 'Мария (оператор)', hashPassword('kassa-pass-1'), 'operator');
+  app.db.addUser('boss', 'Анна', hashPassword('boss-pass-1'));
+  app.db.addUser('kassa', 'Мария', hashPassword('kassa-pass-1'));
   admin = await login('boss', 'boss-pass-1');
-  oper = await login('kassa', 'kassa-pass-1');
+  admin2 = await login('kassa', 'kassa-pass-1');
 });
-after(async () => { await app.stop(); await new Promise((r) => fakeTg.close(r)); });
+after(async () => { await app.stop(); await new Promise((r) => fakeTg.close(r)); fs.rmSync(photoDir, { recursive: true, force: true }); });
 
 let device;
 
-test('сотрудники: добавлять может только администратор', async () => {
+test('сотрудники: добавляет администратор, должности из списка', async () => {
   assert.equal((await api('POST', '/api/staff/employees', { name: 'Иван', role: 'Повар', pin: '1234' })).status, 401);
-  assert.equal((await api('POST', '/api/staff/employees', { name: 'Иван', role: 'Повар', pin: '1234' }, { cookie: oper })).status, 403);
 
   const ivan = await json(await api('POST', '/api/staff/employees', { name: 'Иван', role: 'Повар', pin: '1234', rate: 300 }, { cookie: admin }));
   assert.equal(ivan.status, 201);
-  assert.equal((await api('POST', '/api/staff/employees', { name: 'Пётр', role: 'Курьер', pin: '5678', rate: 250 }, { cookie: admin })).status, 201);
+  assert.equal((await api('POST', '/api/staff/employees', { name: 'Пётр', role: 'Водитель-курьер', pin: '5678', rate: 250 }, { cookie: admin2 })).status, 201);
 
-  const dup = await json(await api('POST', '/api/staff/employees', { name: 'Олег', role: 'Курьер', pin: '1234' }, { cookie: admin }));
+  const dup = await json(await api('POST', '/api/staff/employees', { name: 'Олег', role: 'Кухонный работник', pin: '1234' }, { cookie: admin }));
   assert.equal(dup.status, 422);
   assert.match(dup.error, /уже у другого/);
-  assert.equal((await api('POST', '/api/staff/employees', { name: 'Олег', pin: '12' }, { cookie: admin })).status, 422);
+  assert.equal((await api('POST', '/api/staff/employees', { name: 'Олег', role: 'Повар', pin: '12' }, { cookie: admin })).status, 422);
+  const badRole = await json(await api('POST', '/api/staff/employees', { name: 'Олег', role: 'Сушист', pin: '1111' }, { cookie: admin }));
+  assert.match(badRole.error, /должность/);
 
-  const listOper = await json(await api('GET', '/api/staff/employees', null, { cookie: oper }));
-  assert.equal(listOper.employees.length, 2);
-  assert.equal(listOper.employees[0].rate, undefined); // оператор не видит ставки
-  const listAdmin = await json(await api('GET', '/api/staff/employees', null, { cookie: admin }));
-  assert.ok(listAdmin.employees.some((e) => e.rate === 300));
+  const list = await json(await api('GET', '/api/staff/employees', null, { cookie: admin2 }));
+  assert.equal(list.employees.length, 2);
+  assert.ok(list.employees.some((e) => e.rate === 300)); // любой администратор видит ставки
+  assert.deepEqual(list.roles, ['Повар', 'Кухонный работник', 'Технический персонал', 'Водитель-курьер', 'Администратор']);
 });
 
 test('планшет: без подключения отметиться нельзя', async () => {
   assert.equal((await api('GET', '/api/timeclock/state')).status, 401);
   assert.equal((await api('POST', '/api/timeclock/punch', { pin: '1234' })).status, 401);
-  assert.equal((await api('POST', '/api/staff/devices', { name: 'Кухня' }, { cookie: oper })).status, 403);
   const r = await api('POST', '/api/staff/devices', { name: 'Кухня' }, { cookie: admin });
   assert.equal(r.status, 200);
   device = r.headers.get('set-cookie').split(';')[0];
@@ -89,31 +96,58 @@ test('планшет: без подключения отметиться нел�
   assert.deepEqual(state.onShift, []);
 });
 
-test('отметка по ПИН: начало и конец смены', async () => {
-  const wrong = await json(await api('POST', '/api/timeclock/punch', { pin: '0000' }, { cookie: device }));
+test('отметка по ПИН с фото: начало и конец смены', async () => {
+  const wrong = await json(await api('POST', '/api/timeclock/punch', { pin: '0000', photo }, { cookie: device }));
   assert.equal(wrong.status, 404);
+  const broken = await json(await api('POST', '/api/timeclock/punch', { pin: '1234', photo: 'data:image/jpeg;base64,AAAA' }, { cookie: device }));
+  assert.equal(broken.status, 422);
 
-  const start = await json(await api('POST', '/api/timeclock/punch', { pin: '1234' }, { cookie: device }));
+  const start = await json(await api('POST', '/api/timeclock/punch', { pin: '1234', photo }, { cookie: device }));
   assert.equal(start.action, 'start');
   assert.equal(start.name, 'Иван');
-  await api('POST', '/api/timeclock/punch', { pin: '5678' }, { cookie: device });
+  assert.equal(start.photo, true);
+  const noPhoto = await json(await api('POST', '/api/timeclock/punch', { pin: '5678' }, { cookie: device })); // камера не сработала — отметка всё равно проходит
+  assert.equal(noPhoto.photo, false);
   const state = await json(await api('GET', '/api/timeclock/state', null, { cookie: device }));
   assert.deepEqual(state.onShift.map((s) => s.name).sort(), ['Иван', 'Пётр']);
 
   // сдвигаем начало смены Ивана на 8 часов назад, чтобы проверить подсчёт часов и денег
   app.db.raw.prepare("UPDATE work_shifts SET started_at = started_at - 8 * 3600000 WHERE employee_id = (SELECT id FROM employees WHERE name = 'Иван')").run();
-  const end = await json(await api('POST', '/api/timeclock/punch', { pin: '1234' }, { cookie: device }));
+  const end = await json(await api('POST', '/api/timeclock/punch', { pin: '1234', photo }, { cookie: device }));
   assert.equal(end.action, 'end');
+  assert.equal(end.photo, true);
   assert.ok(end.minutes >= 480 && end.minutes <= 481);
 
   const from = Date.now() - 864e5, to = Date.now() + 1000;
-  const sheetAdmin = await json(await api('GET', `/api/staff/timeclock?from=${from}&to=${to}`, null, { cookie: admin }));
-  const ivan = sheetAdmin.employees.find((e) => e.name === 'Иван');
+  const sheet = await json(await api('GET', `/api/staff/timeclock?from=${from}&to=${to}`, null, { cookie: admin }));
+  const ivan = sheet.employees.find((e) => e.name === 'Иван');
   assert.equal(ivan.shifts, 1);
   assert.equal(ivan.pay, 2400); // 8 ч × 300 ₽
-  assert.deepEqual(sheetAdmin.onShift.map((s) => s.name), ['Пётр']);
-  const sheetOper = await json(await api('GET', `/api/staff/timeclock?from=${from}&to=${to}`, null, { cookie: oper }));
-  assert.equal(sheetOper.employees.find((e) => e.name === 'Иван').pay, undefined);
+  assert.deepEqual(sheet.onShift.map((s) => [s.name, s.startPhoto]), [['Пётр', false]]);
+
+  // фото смены видит только администратор
+  const shift = sheet.shifts.find((x) => x.name === 'Иван');
+  assert.deepEqual([shift.startPhoto, shift.endPhoto], [true, true]);
+  assert.equal((await api('GET', `/api/staff/photos/${shift.id}/start`)).status, 401);
+  assert.equal((await api('GET', `/api/staff/photos/${shift.id}/start`, null, { device })).status, 401);
+  const img = await api('GET', `/api/staff/photos/${shift.id}/end`, null, { cookie: admin });
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(Buffer.from(await img.arrayBuffer()), JPEG);
+  assert.equal((await api('GET', `/api/staff/photos/${sheet.onShift[0].shiftId}/start`, null, { cookie: admin })).status, 404);
+  // файлы лежат в папке фото, а не в папке сайта
+  const month = new Date().toISOString().slice(0, 7);
+  assert.ok(fs.existsSync(path.join(photoDir, month, `${shift.id}-start.jpg`)));
+});
+
+test('старые фото удаляются автоматически', async () => {
+  const sheet = await json(await api('GET', `/api/staff/timeclock?from=${Date.now() - 864e5}&to=${Date.now() + 1000}`, null, { cookie: admin }));
+  const shift = sheet.shifts.find((x) => x.name === 'Иван');
+  app.db.raw.prepare('UPDATE work_shifts SET started_at = started_at - 100 * 86400000 WHERE id = ?').run(shift.id);
+  app.shifts.purgePhotos(); // сервер делает это раз в сутки, срок — PHOTO_RETENTION_DAYS
+  const month = new Date().toISOString().slice(0, 7);
+  assert.ok(!fs.existsSync(path.join(photoDir, month, `${shift.id}-start.jpg`)));
+  assert.equal((await api('GET', `/api/staff/photos/${shift.id}/start`, null, { cookie: admin })).status, 404);
 });
 
 test('ПИН нельзя подобрать перебором', async () => {
@@ -128,7 +162,6 @@ test('ПИН нельзя подобрать перебором', async () => {
 test('админ закрывает забытую смену, уволенный не может отметиться', async () => {
   const sheet = await json(await api('GET', '/api/staff/timeclock', null, { cookie: admin }));
   const petr = sheet.onShift.find((s) => s.name === 'Пётр');
-  assert.equal((await api('POST', `/api/staff/work-shifts/${petr.shiftId}/close`, null, { cookie: oper })).status, 403);
   assert.equal((await api('POST', `/api/staff/work-shifts/${petr.shiftId}/close`, null, { cookie: admin })).status, 200);
   assert.equal((await json(await api('GET', '/api/timeclock/state', null, { cookie: device }))).onShift.length, 0);
 
@@ -141,24 +174,24 @@ test('касса: открытие, внесения и изъятия, выру
     const r = await json(await api('POST', '/api/orders', {
       name: 'Клиент', phone: `+7912${String(Math.random()).slice(2, 9)}`, method: 'delivery', address: 'ул. Ленина, 1', payment, items
     }));
-    const { orders } = await json(await api('GET', '/api/orders', null, { cookie: oper }));
+    const { orders } = await json(await api('GET', '/api/orders', null, { cookie: admin2 }));
     return orders.find((o) => o.id === r.id);
   };
-  const done = (o) => api('PATCH', `/api/orders/${o.id}`, { status: 'done' }, { cookie: oper });
+  const done = (o) => api('PATCH', `/api/orders/${o.id}`, { status: 'done' }, { cookie: admin2 });
 
   // заказ, выполненный до открытия смены, в выручку не попадает
   const early = await placed('Наличными', [{ id: 'trio-set-24-pcs', qty: 1 }]);
   await done(early);
   await new Promise((r) => setTimeout(r, 5));
 
-  assert.equal((await json(await api('GET', '/api/staff/cash', null, { cookie: oper }))).current, null);
-  assert.equal((await api('POST', '/api/staff/cash/move', { kind: 'in', amount: 100, reason: 'тест' }, { cookie: oper })).status, 409);
-  assert.equal((await api('POST', '/api/staff/cash/open', { openingCash: 'много' }, { cookie: oper })).status, 422);
+  assert.equal((await json(await api('GET', '/api/staff/cash', null, { cookie: admin2 }))).current, null);
+  assert.equal((await api('POST', '/api/staff/cash/move', { kind: 'in', amount: 100, reason: 'тест' }, { cookie: admin2 })).status, 409);
+  assert.equal((await api('POST', '/api/staff/cash/open', { openingCash: 'много' }, { cookie: admin2 })).status, 422);
 
   sent.length = 0;
-  const opened = await json(await api('POST', '/api/staff/cash/open', { openingCash: 5000 }, { cookie: oper }));
+  const opened = await json(await api('POST', '/api/staff/cash/open', { openingCash: 5000 }, { cookie: admin2 }));
   assert.equal(opened.status, 201);
-  assert.equal(opened.current.openedBy, 'Мария (оператор)');
+  assert.equal(opened.current.openedBy, 'Мария');
   assert.equal((await api('POST', '/api/staff/cash/open', { openingCash: 1 }, { cookie: admin })).status, 409);
   await until(() => sent.find((m) => /Касса открыта/.test(m.text)));
 
@@ -169,11 +202,11 @@ test('касса: открытие, внесения и изъятия, выру
   for (const o of [cashOrder, cardOrder, sbpOrder]) await done(o);
   assert.equal(notDone.status, 'new');
 
-  await api('POST', '/api/staff/cash/move', { kind: 'in', amount: 1000, reason: 'Размен' }, { cookie: oper });
-  assert.equal((await api('POST', '/api/staff/cash/move', { kind: 'out', amount: 300 }, { cookie: oper })).status, 422);
-  await api('POST', '/api/staff/cash/move', { kind: 'out', amount: 300, reason: 'Такси курьеру' }, { cookie: oper });
+  await api('POST', '/api/staff/cash/move', { kind: 'in', amount: 1000, reason: 'Размен' }, { cookie: admin2 });
+  assert.equal((await api('POST', '/api/staff/cash/move', { kind: 'out', amount: 300 }, { cookie: admin2 })).status, 422);
+  await api('POST', '/api/staff/cash/move', { kind: 'out', amount: 300, reason: 'Такси курьеру' }, { cookie: admin2 });
 
-  const cur = (await json(await api('GET', '/api/staff/cash', null, { cookie: oper }))).current;
+  const cur = (await json(await api('GET', '/api/staff/cash', null, { cookie: admin2 }))).current;
   assert.deepEqual(cur.totals, { cash: 1500, card: 1970, sbp: 1500, other: 0 });
   assert.equal(cur.ordersDone, 3);
   assert.equal(cur.revenue, 4970);
@@ -181,7 +214,7 @@ test('касса: открытие, внесения и изъятия, выру
   assert.equal(cur.moves.length, 2);
 
   sent.length = 0;
-  const closed = await json(await api('POST', '/api/staff/cash/close', { countedCash: 7100, note: 'Пересчитала дважды' }, { cookie: oper }));
+  const closed = await json(await api('POST', '/api/staff/cash/close', { countedCash: 7100, note: 'Пересчитала дважды' }, { cookie: admin2 }));
   assert.equal(closed.status, 200);
   assert.equal(closed.closed.difference, -100);
   const msg = await until(() => sent.find((m) => /Касса закрыта/.test(m.text)));
@@ -192,5 +225,5 @@ test('касса: открытие, внесения и изъятия, выру
   assert.equal(after.current, null);
   assert.equal(after.history[0].countedCash, 7100);
   assert.equal(after.history[0].note, 'Пересчитала дважды');
-  assert.equal((await api('POST', '/api/staff/cash/close', { countedCash: 1 }, { cookie: oper })).status, 409);
+  assert.equal((await api('POST', '/api/staff/cash/close', { countedCash: 1 }, { cookie: admin2 })).status, 409);
 });

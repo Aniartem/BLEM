@@ -1,4 +1,5 @@
-/* Терминал смен на планшете: сотрудник вводит ПИН — смена начинается или заканчивается. */
+/* Терминал смен на планшете: сотрудник вводит ПИН — смена начинается или заканчивается,
+   камера планшета делает фото сотрудника в момент отметки. */
 (function () {
   const $ = (s) => document.querySelector(s);
   const pad = (n) => String(n).padStart(2, '0');
@@ -10,6 +11,47 @@
   let busy = false;
   let onShift = [];
   let resultTimer;
+  let camReady = false;
+
+  // ---------- Камера ----------
+  async function startCamera() {
+    const note = $('[data-cam-note]');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      note.textContent = 'Камера недоступна в этом браузере — отметки без фото';
+      note.classList.add('is-warn');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      const video = $('[data-video]');
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      camReady = true;
+      note.textContent = 'При отметке делается фото';
+      note.classList.remove('is-warn');
+      // если камеру отключили (например, перезагрузка драйвера) — пробуем снова
+      stream.getVideoTracks()[0].addEventListener('ended', () => { camReady = false; setTimeout(startCamera, 3000); });
+    } catch (e) {
+      camReady = false;
+      note.textContent = e && e.name === 'NotAllowedError'
+        ? 'Нет доступа к камере — разрешите его в настройках браузера. Пока отметки без фото'
+        : 'Камера не найдена — отметки без фото';
+      note.classList.add('is-warn');
+    }
+  }
+
+  // Снимок с камеры: JPEG до 640 px по большей стороне
+  function snapshot() {
+    const video = $('[data-video]');
+    if (!camReady || video.readyState < 2 || !video.videoWidth) return null;
+    const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = $('[data-canvas]');
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    // в превью сотрудник видит себя зеркально, а фото сохраняем как есть — надписи на фоне читаются
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.78);
+  }
 
   function tick() {
     const d = new Date();
@@ -36,6 +78,7 @@
       const res = await fetch('/api/timeclock/state', { credentials: 'same-origin', cache: 'no-store' });
       if (res.status === 401) { $('[data-blocked]').hidden = false; $('[data-entry]').hidden = true; return; }
       const data = await res.json();
+      if (!camReady && $('[data-entry]').hidden) startCamera();
       $('[data-blocked]').hidden = true;
       $('[data-entry]').hidden = false;
       onShift = data.onShift || [];
@@ -43,8 +86,11 @@
     } catch (e) { /* нет связи — покажем при отметке */ }
   }
 
-  function showResult(kind, title, text) {
+  function showResult(kind, title, text, photo) {
     clearTimeout(resultTimer);
+    const img = $('[data-result-photo]');
+    img.hidden = !photo;
+    if (photo) img.src = photo;
     const el = $('[data-result]');
     el.className = 'tc-result tc-result--' + kind;
     $('[data-result-icon]').textContent = kind === 'start' ? '✓' : kind === 'end' ? '☾' : '!';
@@ -60,9 +106,10 @@
     const code = pin;
     pin = '';
     renderDots('wait');
+    const photo = snapshot();
     try {
       const res = await fetch('/api/timeclock/punch', {
-        method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: code })
+        method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: code, photo })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -73,8 +120,10 @@
         return;
       }
       const first = data.name.split(' ')[0];
-      if (data.action === 'start') showResult('start', `${first}, смена началась`, `Отметка в ${hhmm(data.startedAt)}. Хорошей работы!`);
-      else showResult('end', `${first}, смена закончена`, `С ${hhmm(data.startedAt)} до ${hhmm(data.endedAt)} · отработано ${dur(data.minutes)}. Спасибо!`);
+      const shot = data.photo ? photo : null;
+      const noPhoto = data.photo ? '' : ' Фото не сохранилось — сообщите администратору.';
+      if (data.action === 'start') showResult('start', `${first}, смена началась`, `Отметка в ${hhmm(data.startedAt)}. Хорошей работы!${noPhoto}`, shot);
+      else showResult('end', `${first}, смена закончена`, `С ${hhmm(data.startedAt)} до ${hhmm(data.endedAt)} · отработано ${dur(data.minutes)}. Спасибо!${noPhoto}`, shot);
       renderDots();
       loadState();
     } catch (e) {
@@ -106,7 +155,7 @@
 
   tick();
   renderDots();
-  loadState();
+  loadState().then(() => { if (!$('[data-entry]').hidden) startCamera(); });
   setInterval(tick, 5000);
   setInterval(() => { loadState(); }, 30000);
 })();

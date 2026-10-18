@@ -17,7 +17,6 @@
     editing: null,     // id сотрудника или 'new'
     loaded: false
   };
-  const isAdmin = () => (CRM.user() || {}).role === 'admin';
   const hours = (min) => `${Math.floor(min / 60)} ч ${pad(min % 60)} мин`;
   const sinceText = (t) => hours(Math.max(0, Math.round((Date.now() - t) / 60000)));
   const money = (v) => {
@@ -315,33 +314,55 @@
       if (main.dataset.ext === 'shifts') { updateOnShift(main); return; }
       main.dataset.ext = 'shifts';
       main.innerHTML = '<div class="ext" data-shifts-root><p class="crm-note">Загружаем смены…</p></div>';
-      Promise.all([loadTimeclock(), isAdmin() ? loadEmployees() : null]).then(() => mountShifts(main));
+      Promise.all([loadTimeclock(), loadEmployees()]).then(() => mountShifts(main));
     }
   };
 
   const PERIODS = [['today', 'Сегодня'], ['yesterday', 'Вчера'], ['week', 'Эта неделя'], ['month', 'Этот месяц'], ['prev', 'Прошлый месяц']];
 
+  // Фото с планшета: миниатюра, по нажатию — крупно
+  function photoHTML(shiftId, kind, has, name, at) {
+    const label = `${name}, ${kind === 'start' ? 'приход' : 'уход'} ${dateShort(at)}`;
+    if (!has) return `<span class="ph ph--none" title="Фото нет: камера планшета не сработала">нет фото</span>`;
+    const src = `/api/staff/photos/${shiftId}/${kind}`;
+    return `<button type="button" class="ph" data-photo="${src}" data-caption="${esc(label)}" aria-label="Фото: ${esc(label)}"><img src="${src}" alt="" loading="lazy"></button>`;
+  }
+
+  function openPhoto(src, caption) {
+    let lb = document.querySelector('[data-lightbox]');
+    if (!lb) {
+      lb = document.createElement('div');
+      lb.className = 'crm-lightbox';
+      lb.dataset.lightbox = '';
+      lb.innerHTML = '<figure><img alt=""><figcaption></figcaption></figure>';
+      lb.addEventListener('click', () => { lb.hidden = true; });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') lb.hidden = true; });
+      document.getElementById('crm').appendChild(lb);
+    }
+    lb.querySelector('img').src = src;
+    lb.querySelector('figcaption').textContent = caption;
+    lb.hidden = false;
+  }
+
   function mountShifts(main) {
     const box = main.querySelector('[data-shifts-root]');
     if (!box) return;
-    const admin = isAdmin();
     box.innerHTML = `
       <div class="ext-headline">
         <h2>Сейчас на смене</h2>
-        <span>Сотрудники отмечаются ПИН-кодом на планшете — страница <b>/smena</b></span>
+        <span>Сотрудники отмечаются ПИН-кодом на планшете — страница <b>/smena</b>, планшет делает фото при отметке</span>
       </div>
       <div class="onshift" data-onshift>${onShiftHTML()}</div>
       <h3 class="ext-h">Табель</h3>
       <div class="chips">${PERIODS.map(([id, t]) => `<button type="button" class="chip ${S.period === id ? 'is-on' : ''}" data-period="${id}">${t}</button>`).join('')}</div>
       <div data-sheet>${sheetHTML()}</div>
-      ${admin ? `
-        <h3 class="ext-h">Сотрудники</h3>
-        <div class="ext-row">
-          <button type="button" class="crm-btn" data-emp-new>+ Добавить сотрудника</button>
-          <button type="button" class="crm-btn crm-btn--ghost" data-pair>Подключить этот планшет для отметок</button>
-        </div>
-        <div data-emp-form></div>
-        <div class="table-wrap" data-emp-list>${employeesHTML()}</div>` : '<p class="crm-note">Сотрудников и ставки настраивает администратор.</p>'}`;
+      <h3 class="ext-h">Сотрудники</h3>
+      <div class="ext-row">
+        <button type="button" class="crm-btn" data-emp-new>+ Добавить сотрудника</button>
+        <button type="button" class="crm-btn crm-btn--ghost" data-pair>Подключить этот планшет для отметок</button>
+      </div>
+      <div data-emp-form></div>
+      <div class="table-wrap" data-emp-list>${employeesHTML()}</div>`;
     bindShifts(box);
   }
 
@@ -350,38 +371,41 @@
     if (!list.length) return '<p class="crm-note">Никто не отметился</p>';
     return list.map((p) => `
       <div class="onshift__card">
-        <b>${esc(p.name)}</b><span>${esc(p.role)}</span>
-        <span class="onshift__time">с ${hhmm(p.startedAt)} · ${sinceText(p.startedAt)}</span>
-        ${isAdmin() ? `<button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-close-shift="${p.shiftId}" data-name="${esc(p.name)}">Закрыть смену</button>` : ''}
+        ${photoHTML(p.shiftId, 'start', p.startPhoto, p.name, p.startedAt)}
+        <div class="onshift__info">
+          <b>${esc(p.name)}</b><span>${esc(p.role)}</span>
+          <span class="onshift__time">с ${hhmm(p.startedAt)} · ${sinceText(p.startedAt)}</span>
+          <button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-close-shift="${p.shiftId}" data-name="${esc(p.name)}">Закрыть смену</button>
+        </div>
       </div>`).join('');
   }
 
   function sheetHTML() {
     const t = S.timeclock;
     if (!t) return '';
-    const admin = isAdmin();
     const total = t.employees.reduce((a, e) => ({ min: a.min + e.minutes, pay: a.pay + (e.pay || 0) }), { min: 0, pay: 0 });
     const rows = t.employees.map((e) => `
-      <tr><td>${esc(e.name)}</td><td>${esc(e.role)}</td><td class="r">${e.shifts}</td><td class="r">${hours(e.minutes)}</td>${admin ? `<td class="r">${rub(e.pay)}</td>` : ''}</tr>`).join('');
+      <tr><td>${esc(e.name)}</td><td>${esc(e.role)}</td><td class="r">${e.shifts}</td><td class="r">${hours(e.minutes)}</td><td class="r">${rub(e.pay)}</td></tr>`).join('');
     const details = t.shifts.map((s) => `
       <tr><td class="num">${esc(dateShort(s.startedAt))}</td><td>${esc(s.name)}<small>${esc(s.role)}</small></td>
       <td>${s.endedAt ? hhmm(s.endedAt) + (s.closedBy && s.closedBy !== s.name ? `<small>закрыл(а) ${esc(s.closedBy)}</small>` : '') : '<span class="pill pill--done">на смене</span>'}</td>
-      <td class="r">${hours(s.minutes)}</td>${admin ? `<td class="r">${rub(s.pay)}</td>` : ''}</tr>`).join('');
+      <td class="ph-cell">${photoHTML(s.id, 'start', s.startPhoto, s.name, s.startedAt)}${s.endedAt ? photoHTML(s.id, 'end', s.endPhoto, s.name, s.endedAt) : ''}</td>
+      <td class="r">${hours(s.minutes)}</td><td class="r">${rub(s.pay)}</td></tr>`).join('');
     return `
       <div class="table-wrap">
         <table class="tbl">
-          <thead><tr><th>Сотрудник</th><th>Должность</th><th class="r">Смен</th><th class="r">Отработано</th>${admin ? '<th class="r">К выплате</th>' : ''}</tr></thead>
-          <tbody>${rows || `<tr><td colspan="${admin ? 5 : 4}" class="tbl-empty">За этот период смен нет</td></tr>`}</tbody>
-          ${rows ? `<tfoot><tr><td colspan="3"><b>Итого</b></td><td class="r"><b>${hours(total.min)}</b></td>${admin ? `<td class="r"><b>${rub(total.pay)}</b></td>` : ''}</tr></tfoot>` : ''}
+          <thead><tr><th>Сотрудник</th><th>Должность</th><th class="r">Смен</th><th class="r">Отработано</th><th class="r">К выплате</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" class="tbl-empty">За этот период смен нет</td></tr>'}</tbody>
+          ${rows ? `<tfoot><tr><td colspan="3"><b>Итого</b></td><td class="r"><b>${hours(total.min)}</b></td><td class="r"><b>${rub(total.pay)}</b></td></tr></tfoot>` : ''}
         </table>
       </div>
-      ${details ? `<details class="ext-details"><summary>Все смены за период (${t.shifts.length})</summary>
-        <div class="table-wrap"><table class="tbl"><thead><tr><th>Начало</th><th>Сотрудник</th><th>Конец</th><th class="r">Часы</th>${admin ? '<th class="r">Сумма</th>' : ''}</tr></thead><tbody>${details}</tbody></table></div></details>` : ''}`;
+      ${details ? `<details class="ext-details" open><summary>Все отметки за период (${t.shifts.length}) — с фото прихода и ухода</summary>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>Начало</th><th>Сотрудник</th><th>Конец</th><th>Фото: приход · уход</th><th class="r">Часы</th><th class="r">Сумма</th></tr></thead><tbody>${details}</tbody></table></div></details>` : ''}`;
   }
 
   function employeesHTML() {
     const list = (S.employees && S.employees.employees) || [];
-    if (!list.length) return '<table class="tbl"><tbody><tr><td class="tbl-empty">Добавьте первого сотрудника — повара, курьера, кассира</td></tr></tbody></table>';
+    if (!list.length) return '<table class="tbl"><tbody><tr><td class="tbl-empty">Добавьте сотрудников: поваров, кухонных работников, технический персонал, водителей-курьеров, администраторов</td></tr></tbody></table>';
     return `<table class="tbl"><thead><tr><th>Сотрудник</th><th>Должность</th><th class="r">Ставка</th><th>Статус</th><th></th></tr></thead><tbody>${list.map((e) => `
       <tr class="${e.active ? '' : 'is-off'}"><td>${esc(e.name)}</td><td>${esc(e.role)}</td><td class="r">${e.rate ? rub(e.rate) + '/ч' : '—'}</td>
       <td>${e.active ? '<span class="pill pill--done">Работает</span>' : '<span class="pill">Уволен</span>'}</td>
@@ -420,6 +444,7 @@
     box.addEventListener('click', async (e) => {
       const t = e.target.closest('button');
       if (!t) return;
+      if (t.dataset.photo) { openPhoto(t.dataset.photo, t.dataset.caption); return; }
       if (t.dataset.period) {
         S.period = t.dataset.period;
         box.querySelectorAll('[data-period]').forEach((b) => b.classList.toggle('is-on', b === t));

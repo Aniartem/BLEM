@@ -50,7 +50,7 @@ function createAuth(db, { secureCookies }) {
       if (!user || !ok) return null;
       const token = crypto.randomBytes(32).toString('base64url');
       db.addSession(sha256(token), user.id, Date.now() + SESSION_DAYS * 864e5);
-      return { user: { id: user.id, login: user.login, name: user.name, role: user.role }, setCookie: cookie(token, SESSION_DAYS * 86400) };
+      return { user: { id: user.id, login: user.login, name: user.name }, setCookie: cookie(token, SESSION_DAYS * 86400) };
     },
     userFrom(req) {
       const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];

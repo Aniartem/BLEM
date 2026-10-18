@@ -645,7 +645,7 @@
     if (problems.length) { draft.error = 'Заполните: ' + problems.join(', '); renderComposeSide(); return; }
 
     const now = Date.now();
-    const by = state.user ? state.user.name : 'Оператор';
+    const by = state.user ? state.user.name : 'Администратор';
     const history = [{ status: 'new', at: now, by }];
     if (draft.accepted) history.push({ status: 'accepted', at: now, by });
     const order = {

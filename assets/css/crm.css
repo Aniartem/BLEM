@@ -306,10 +306,22 @@ body.crm-page { margin: 0; background: var(--crm-bg); color: var(--crm-text); co
 .tbl tfoot td { border-top: 1px solid var(--crm-line); }
 .tbl tr.is-off td { color: var(--crm-muted); }
 .onshift { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 10px; }
-.onshift__card { display: grid; gap: 2px; padding: 12px 14px; border-radius: 10px; background: var(--crm-panel); border: 1px solid var(--crm-line); border-left: 3px solid var(--crm-ok); }
-.onshift__card span { color: var(--crm-muted); font-size: 13px; }
-.onshift__card .onshift__time { color: var(--crm-text); }
+.onshift__card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px 14px; border-radius: 10px; background: var(--crm-panel); border: 1px solid var(--crm-line); border-left: 3px solid var(--crm-ok); }
+.onshift__info { display: grid; gap: 2px; min-width: 0; }
+.onshift__card .ph { width: 72px; height: 72px; }
+.onshift__info span { color: var(--crm-muted); font-size: 13px; }
+.onshift__info .onshift__time { color: var(--crm-text); }
 .onshift__card .crm-btn { justify-self: start; margin-top: 6px; }
+.ph { display: inline-block; width: 48px; height: 48px; padding: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--crm-line); background: var(--crm-panel-2); cursor: zoom-in; vertical-align: middle; }
+.ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph--none { display: inline-grid; place-items: center; cursor: default; font-size: 10px; line-height: 1.1; text-align: center; color: #f0b35a; border-color: rgba(240, 179, 90, .4); }
+.ph-cell { white-space: nowrap; }
+.ph-cell .ph + .ph { margin-left: 6px; }
+.crm-lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, .85); cursor: zoom-out; }
+.crm-lightbox[hidden] { display: none; }
+.crm-lightbox figure { margin: 0; display: grid; gap: 10px; justify-items: center; }
+.crm-lightbox img { max-width: min(640px, 92vw); max-height: 78vh; border-radius: 14px; }
+.crm-lightbox figcaption { color: var(--crm-text); }
 .cz-grid--4 { grid-template-columns: 1.4fr 1fr 1fr .8fr; }
 
 @media (max-width: 1100px) {
