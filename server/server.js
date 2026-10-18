@@ -11,6 +11,7 @@ const { loadMenu, priceOrder, OrderError } = require('./pricing');
 const { createAuth } = require('./auth');
 const { createTelegram, STATUS } = require('./telegram');
 const { createShifts } = require('./shifts');
+const { createStock } = require('./stock');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -121,6 +122,7 @@ function createApp(cfg, { log = console } = {}) {
     for (const res of clients) res.write(msg);
   }
   const broadcast = (order) => broadcastEvent('order', order);
+  const stock = createStock({ db, tg, timeZone: cfg.timeZone, log });
   const shifts = createShifts({ db, secureCookies: cfg.secureCookies, broadcast: broadcastEvent, tg, timeZone: cfg.timeZone, photoDir: cfg.photoDir, photoDays: cfg.photoDays, log });
 
   async function setStatus(id, status, by) {
@@ -231,7 +233,9 @@ function createApp(cfg, { log = console } = {}) {
   };
 
   const shiftRoutes = shifts.routes({ send, readJson, staff, sameOrigin });
-  Object.assign(routes, shiftRoutes.exact);
+  const stockRoutes = stock.routes({ send, readJson, staff, sameOrigin });
+  Object.assign(routes, shiftRoutes.exact, stockRoutes.exact);
+  const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern];
 
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
@@ -239,7 +243,7 @@ function createApp(cfg, { log = console } = {}) {
     try {
       if (routes[key]) return await routes[key](req, res, url);
 
-      for (const [re, method, fn] of shiftRoutes.pattern) {
+      for (const [re, method, fn] of patternRoutes) {
         const pm = url.pathname.match(re);
         if (pm && req.method === method) return await fn(req, res, url, pm);
       }
@@ -297,6 +301,7 @@ function createApp(cfg, { log = console } = {}) {
     db,
     tg,
     shifts,
+    stock,
     setStatus,
     start() {
       tg.start(setStatus);

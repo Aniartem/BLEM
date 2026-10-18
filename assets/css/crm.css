@@ -324,11 +324,39 @@ body.crm-page { margin: 0; background: var(--crm-bg); color: var(--crm-text); co
 .crm-lightbox figcaption { color: var(--crm-text); }
 .cz-grid--4 { grid-template-columns: 1.4fr 1fr 1fr .8fr; }
 
+/* склад */
+.ext-kpis--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.stock-tabs { margin: 0; }
+.stock-alerts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 12px; }
+.stock-alert { border-color: rgba(224, 163, 58, .45); }
+.stock-alert ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.stock-alert li { color: var(--crm-text); }
+.stock-alert li.is-bad, .stock-alert li.is-bad b { color: var(--crm-danger); }
+.stock-tools input[type="search"], .stock-tools select { height: 38px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--crm-line); background: var(--crm-panel); outline: none; }
+.stock-tools input[type="search"] { flex: 1 1 220px; min-width: 0; }
+.stock-tools input:focus, .stock-tools select:focus { border-color: var(--crm-gold); }
+.stock-total { justify-content: space-between; align-items: center; }
+.stock-total b { font-size: 16px; }
+.tbl .tbl-group td { padding-top: 14px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--crm-gold); background: transparent; cursor: default; }
+.tbl tbody tr.tbl-group:hover { background: transparent; }
+.tbl .neg { color: var(--crm-danger); }
+.tbl .pos { color: var(--crm-ok); }
+.tbl .nowrap { white-space: nowrap; }
+.tbl--form tr { cursor: default; }
+.tbl--form tbody tr:hover { background: transparent; }
+.tbl--form input, .tbl--form select { width: 100%; min-width: 90px; height: 36px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--crm-line); background: var(--crm-bg); outline: none; }
+.tbl--form select { min-width: 200px; }
+.tbl--form input:focus, .tbl--form select:focus { border-color: var(--crm-gold); }
+.tbl--form td small { display: block; margin-top: 2px; }
+.tbl tr.is-open { background: var(--crm-panel-2); }
+.tbl .doc-lines > td { padding: 0 12px 12px; background: var(--crm-panel-2); cursor: default; }
+.tbl .doc-lines .tbl tr { cursor: default; }
+
 @media (max-width: 1100px) {
   .crm-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 1000px) {
-  .ext-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ext-kpis, .ext-kpis--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ext-grid, .cz-grid--4 { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
