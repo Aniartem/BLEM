@@ -54,6 +54,9 @@ window.RollevichStore = (function () {
     };
   }
 
+  // подписчики служебных событий сервера (касса, смены)
+  const eventHandlers = {};
+
   function apiBackend() {
     async function req(method, url, body) {
       const res = await fetch(url, {
@@ -79,6 +82,7 @@ window.RollevichStore = (function () {
       },
       async login(login, password) { return (await req('POST', '/api/login', { login, password })).user; },
       async logout() { await req('POST', '/api/logout'); },
+      request: req,
       subscribe(onData, onError) {
         const map = new Map();
         const emit = () => onData([...map.values()].sort((a, b) => b.createdAt - a.createdAt));
@@ -95,6 +99,10 @@ window.RollevichStore = (function () {
           map.set(o.id, o);
           emit();
         });
+        ['cash', 'timeclock'].forEach((name) => es.addEventListener(name, (e) => {
+          const data = JSON.parse(e.data);
+          (eventHandlers[name] || []).forEach((fn) => fn(data));
+        }));
         // после обрыва связи догружаем то, что могли пропустить
         es.onopen = () => { if (opened) load(); opened = true; };
         es.onerror = () => {
@@ -162,6 +170,13 @@ window.RollevichStore = (function () {
     async me() { const b = await backend(); return b.me ? b.me() : null; },
     async login(login, password) { return (await backend()).login(login, password); },
     async logout() { const b = await backend(); if (b.logout) await b.logout(); },
-    async subscribe(onData, onError) { return (await backend()).subscribe(onData, onError); }
+    async subscribe(onData, onError) { return (await backend()).subscribe(onData, onError); },
+    // запросы к своему серверу (касса, смены); на других вариантах недоступны
+    async request(method, url, body) {
+      const b = await backend();
+      if (!b.request) throw { code: 'unavailable', message: 'Нужен сервер РОЛЛЕВИЧ' };
+      return b.request(method, url, body);
+    },
+    on(name, fn) { (eventHandlers[name] = eventHandlers[name] || []).push(fn); }
   };
 })();

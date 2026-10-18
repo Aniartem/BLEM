@@ -82,6 +82,7 @@ test('сайт и служебные адреса', async () => {
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
   assert.equal((await api('GET', '/crm')).status, 200);
+  assert.equal((await api('GET', '/smena')).status, 200);
   assert.equal((await api('GET', '/assets/js/menu.js')).status, 200);
   for (const p of ['/server/server.js', '/.env', '/package.json', '/assets/../server/db.js', '/assets/%2e%2e/server/db.js', '/data/rollevich.db']) {
     assert.equal((await api('GET', p)).status, 404, p);

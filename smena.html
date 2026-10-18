@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#121110">
+  <title>Смены · РОЛЛЕВИЧ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/smena.css">
+</head>
+<body>
+  <main class="tc">
+    <section class="tc-pad">
+      <div class="tc-brand"><span class="tc-mark">Р</span>РОЛЛЕВИЧ · СМЕНЫ</div>
+      <div class="tc-clock" data-clock>--:--</div>
+      <div class="tc-date" data-date></div>
+
+      <div class="tc-blocked" data-blocked hidden>
+        <h1>Планшет не подключён</h1>
+        <p>Администратор: откройте на этом планшете CRM (<b>/crm</b>), войдите, перейдите во вкладку «Смены» и нажмите «Подключить этот планшет для отметок».</p>
+        <a class="tc-link" href="/crm">Открыть CRM</a>
+      </div>
+
+      <div class="tc-entry" data-entry>
+        <p class="tc-hint" data-hint>Введите ваш ПИН-код, чтобы начать или закончить смену</p>
+        <div class="tc-dots" data-dots aria-live="polite"></div>
+        <div class="tc-keys" role="group" aria-label="Цифры ПИН-кода">
+          <button type="button" data-key="1">1</button><button type="button" data-key="2">2</button><button type="button" data-key="3">3</button>
+          <button type="button" data-key="4">4</button><button type="button" data-key="5">5</button><button type="button" data-key="6">6</button>
+          <button type="button" data-key="7">7</button><button type="button" data-key="8">8</button><button type="button" data-key="9">9</button>
+          <button type="button" data-key="del" aria-label="Стереть">⌫</button><button type="button" data-key="0">0</button><button type="button" data-key="ok" class="tc-ok">ОК</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="tc-side">
+      <h2>Сейчас на смене <span data-count></span></h2>
+      <ul class="tc-list" data-list></ul>
+    </aside>
+  </main>
+
+  <div class="tc-result" data-result hidden>
+    <div class="tc-result__box">
+      <div class="tc-result__icon" data-result-icon></div>
+      <h2 data-result-title></h2>
+      <p data-result-text></p>
+    </div>
+  </div>
+
+  <script src="assets/js/smena.js"></script>
+</body>
+</html>

@@ -10,6 +10,7 @@ const { open } = require('./db');
 const { loadMenu, priceOrder, OrderError } = require('./pricing');
 const { createAuth } = require('./auth');
 const { createTelegram, STATUS } = require('./telegram');
+const { createShifts } = require('./shifts');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -112,10 +113,12 @@ function createApp(cfg, { log = console } = {}) {
   const loginByIp = limiter(10, 15 * 60e3);
   const clients = new Set(); // открытые окна CRM (Server-Sent Events)
 
-  function broadcast(order) {
-    const msg = `event: order\ndata: ${JSON.stringify(order)}\n\n`;
+  function broadcastEvent(name, data) {
+    const msg = `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const res of clients) res.write(msg);
   }
+  const broadcast = (order) => broadcastEvent('order', order);
+  const shifts = createShifts({ db, secureCookies: cfg.secureCookies, broadcast: broadcastEvent, tg, timeZone: cfg.timeZone, log });
 
   async function setStatus(id, status, by) {
     if (!STATUS[status]) throw Object.assign(new Error('Неизвестный статус'), { status: 400 });
@@ -224,11 +227,19 @@ function createApp(cfg, { log = console } = {}) {
     }
   };
 
+  const shiftRoutes = shifts.routes({ send, readJson, staff, sameOrigin });
+  Object.assign(routes, shiftRoutes.exact);
+
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const key = `${req.method} ${url.pathname}`;
     try {
       if (routes[key]) return await routes[key](req, res, url);
+
+      for (const [re, method, fn] of shiftRoutes.pattern) {
+        const pm = url.pathname.match(re);
+        if (pm && req.method === method) return await fn(req, res, url, pm);
+      }
 
       const m = url.pathname.match(/^\/api\/orders\/([\w-]{1,64})$/);
       if (m && req.method === 'PATCH') {
@@ -251,7 +262,7 @@ function createApp(cfg, { log = console } = {}) {
 
   // Наружу отдаются только файлы сайта: никаких server/, data/, .env
   function serveStatic(pathname, req, res) {
-    const pages = { '/': 'index.html', '/index.html': 'index.html', '/crm': 'crm.html', '/crm.html': 'crm.html' };
+    const pages = { '/': 'index.html', '/index.html': 'index.html', '/crm': 'crm.html', '/crm.html': 'crm.html', '/smena': 'smena.html', '/smena.html': 'smena.html' };
     let rel = pages[pathname];
     if (!rel) {
       if (!pathname.startsWith('/assets/')) return send(res, 404, 'Не найдено');
@@ -267,7 +278,7 @@ function createApp(cfg, { log = console } = {}) {
         'Content-Length': st.size,
         'Cache-Control': rel.endsWith('.html') ? 'no-cache' : 'public, max-age=300'
       };
-      if (rel === 'crm.html') headers['X-Robots-Tag'] = 'noindex, nofollow';
+      if (rel === 'crm.html' || rel === 'smena.html') headers['X-Robots-Tag'] = 'noindex, nofollow';
       res.writeHead(200, headers);
       if (req.method === 'HEAD') return res.end();
       fs.createReadStream(file).pipe(res);

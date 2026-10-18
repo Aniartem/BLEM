@@ -77,6 +77,13 @@ function createTelegram({ token, chatIds, apiBase = 'https://api.telegram.org', 
     }));
   }
 
+  // Служебные сообщения (открытие и закрытие кассы) во все подключённые чаты
+  async function broadcastText(html) {
+    if (!enabled) return;
+    await Promise.all([...allowed].map((chatId) => call('sendMessage', { chat_id: chatId, text: html, parse_mode: 'HTML' })
+      .catch((e) => log.error(`[telegram] не удалось отправить сообщение в чат ${chatId}: ${e.message}`))));
+  }
+
   async function syncStatus(order) {
     if (!enabled) return;
     await Promise.all(db.tgMessages(order.id).map(async (m) => {
@@ -145,6 +152,7 @@ function createTelegram({ token, chatIds, apiBase = 'https://api.telegram.org', 
     enabled,
     notifyNew,
     syncStatus,
+    broadcastText,
     text,
     start(statusHandler) {
       onStatus = statusHandler;

@@ -83,6 +83,7 @@
           <button type="button" class="crm-btn crm-btn--ghost" data-sound aria-pressed="false">Звук</button>
           <button type="button" class="crm-btn" data-compose-open>+ Новый заказ</button>
           <a class="crm-btn crm-btn--ghost" data-to-site href="#">На сайт</a>
+          <span class="crm-ext-status" data-ext-status></span>
           <span class="crm-user" data-user hidden></span>
         </div>
       </header>
@@ -321,6 +322,7 @@
   // ---------- Отрисовка ----------
   function renderLogin() {
     $('[data-stats]').innerHTML = '';
+    delete $('[data-main]').dataset.ext;
     $('[data-main]').innerHTML = `
       <form class="crm-login" data-login novalidate>
         <h2>Вход в CRM</h2>
@@ -358,6 +360,13 @@
         : state.kind === 'local'
           ? '<span class="dot dot--warn"></span>Локальный режим: видны только заказы, оформленные в этом браузере'
           : '<span class="dot"></span>Подключаемся…';
+    root.querySelectorAll('[data-ext-tab]').forEach((b) => { b.hidden = !extraViews[b.dataset.view].available(state.kind); });
+    if (extraViews[state.view] && !extraViews[state.view].available(state.kind)) state.view = 'board';
+    $('[data-stats]').hidden = !!extraViews[state.view];
+    $('[data-ext-status]').hidden = state.needLogin;
+    Object.values(extraViews).forEach((v) => v.status && v.status($('[data-ext-status]'), state.kind));
+    if (extraViews[state.view]) { extraViews[state.view].render($('[data-main]')); renderDrawer(); return; }
+    delete $('[data-main]').dataset.ext;
     renderStats();
     if (state.view === 'board') renderBoard();
     else if (state.view === 'history') renderHistory();
@@ -791,6 +800,27 @@
     clearTimeout(qTimer);
     qTimer = setTimeout(() => { state.q = e.target.value; render(); }, 150);
   });
+
+  // ---------- Дополнительные вкладки (касса и смены — crm-shifts.js) ----------
+  const extraViews = {};
+  window.RollevichCRM = {
+    addView(id, title, view) {
+      extraViews[id] = { available: () => true, ...view };
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.view = id;
+      b.dataset.extTab = '';
+      b.setAttribute('role', 'tab');
+      b.textContent = title;
+      root.querySelector('.crm-tabs').appendChild(b);
+      if (isCrmRoute()) render();
+    },
+    user: () => state.user,
+    isActive: (id) => isCrmRoute() && state.view === id && !state.needLogin,
+    render: () => { if (isCrmRoute()) render(); },
+    toast,
+    h: { esc, rub, hhmm, dateShort, plural, ago, pad }
+  };
 
   // ---------- Маршрут: сайт ↔ CRM ----------
   const standalone = document.body.classList.contains('crm-page');
