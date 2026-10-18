@@ -532,6 +532,18 @@ button.list-row:hover, .list-row[data-doc]:hover, .list-row[data-product]:hover 
 .wo-legend span { color: var(--muted); }
 
 .attn { display: grid; gap: 0; }
+
+/* ревизия */
+.rev-head { gap: 10px; }
+.rev-progress { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.rev-progress b { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.rev-progress span { color: var(--muted); }
+.ext-card > p.rev-money { color: var(--text); }
+.rev-money .neg { color: var(--red); }
+.rev-money .pos { color: var(--green); }
+.rev-row.is-counted .list-row__main small { color: var(--green); }
+.rev-row.is-counted .inv-input input { background: var(--green-bg); }
+.muted-b { color: var(--muted); font-weight: 500 !important; }
 .ext > .chips { margin: 0; justify-self: start; }
 .ext-card .list { box-shadow: none; border: 1px solid var(--line); }
 .list-row .warn { color: var(--orange); }
@@ -614,7 +626,7 @@ button.list-row:hover, .list-row[data-doc]:hover, .list-row[data-product]:hover 
   .line--receipt .line__sum { grid-column: auto; }
   .line .cz-del { position: absolute; top: 16px; right: 10px; margin: 0; }
   .line__sum { text-align: left; padding-left: 4px; }
-  .inv-row { grid-template-columns: minmax(0, 1fr) 110px; }
+  .inv-row { grid-template-columns: minmax(0, 1fr) 128px; }
   .inv-row .list-row__aside { grid-column: 1; grid-row: 2; justify-items: start; }
   .inv-row .inv-input { grid-column: 2; grid-row: 1 / 3; }
   .wo-sum__total b { font-size: 30px; }

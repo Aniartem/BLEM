@@ -1,5 +1,5 @@
 /*
- * CRM РОЛЛЕВИЧ: вкладки «Склад» (остатки, приход, инвентаризация) и «Списание».
+ * CRM РОЛЛЕВИЧ: вкладки «Склад» (остатки и приход) и «Списание».
  * Видит только управляющий. Работает только со своим сервером.
  */
 (function () {
@@ -12,7 +12,7 @@
 
   const S = {
     data: null,          // обзор: products, suppliers, units, categories, reasons, expiring, today
-    section: 'stock',    // раздел «Склада»: stock | receipt | inventory
+    section: 'stock',    // раздел «Склада»: stock | receipt
     q: '',
     cat: '',
     docs: {},            // kind → документы за месяц
@@ -33,7 +33,7 @@
   const kindOf = (el) => el.closest('[data-stock-root]').dataset.fixed || S.section;
   const REASON_COLOR = { 'Порча': '#ff3b30', 'Истёк срок': '#ff9f0a', 'Брак поставщика': '#af52de', 'Питание персонала': '#0a84ff', 'Проработка блюд': '#34c759', 'Другое': '#8e8e93' };
   const reasonColor = (r) => REASON_COLOR[r] || '#8e8e93';
-  const KIND_TEXT = { receipt: 'Приход', writeoff: 'Списание', inventory: 'Инвентаризация', sale: 'Заказ' };
+  const KIND_TEXT = { receipt: 'Приход', writeoff: 'Списание', inventory: 'Ревизия', sale: 'Заказ' };
 
   async function load() {
     try { S.data = await api('GET', '/api/staff/stock'); } catch (e) { S.data = S.data || { products: [], suppliers: [], units: [], categories: [], reasons: [], expiring: [], error: errText(e) }; }
@@ -77,7 +77,7 @@
     }
   };
 
-  const SECTIONS = [['stock', 'Остатки'], ['receipt', 'Приход'], ['inventory', 'Инвентаризация']];
+  const SECTIONS = [['stock', 'Остатки'], ['receipt', 'Приход']]; // пересчёт остатков — во вкладке «Ревизия»
 
   function mount(main) {
     const box = main.querySelector('[data-stock-root]');
@@ -111,8 +111,7 @@
       el.innerHTML = expiringHTML() + docFormHTML('writeoff') +
         '<h3 class="ext-h">За месяц</h3><div data-wo-sum></div><div data-docs><p class="crm-note">Загружаем…</p></div>';
     } else {
-      el.innerHTML = (kind === 'inventory' ? inventoryFormHTML() : docFormHTML(kind)) +
-        `<h3 class="ext-h">${kind === 'receipt' ? 'Накладные' : 'Инвентаризации'} за месяц</h3><div data-docs><p class="crm-note">Загружаем…</p></div>`;
+      el.innerHTML = docFormHTML(kind) + '<h3 class="ext-h">Накладные за месяц</h3><div data-docs><p class="crm-note">Загружаем…</p></div>';
     }
     const form = el.querySelector('[data-doc-form]');
     if (form) updateDocForm(form);
@@ -424,96 +423,19 @@
       </div>`;
   }
 
-  // ---------- Инвентаризация ----------
-  function inventoryFormHTML() {
-    if (!S.data.products.length) return docFormHTML('inventory');
-    const cats = S.data.categories.filter((c) => S.data.products.some((p) => p.active && p.category === c));
-    const rows = cats.map((c) => `
-      <div class="list-group">${esc(c)}</div>
-      ${S.data.products.filter((p) => p.active && p.category === c).map((p) => `
-        <div class="list-row inv-row" data-inv="${p.id}">
-          <span class="list-row__main"><b>${esc(p.name)}</b><small>по учёту ${qtyText(p.qty)} ${esc(p.unit)}</small></span>
-          <span class="list-row__aside"><b data-diff></b><small data-diff-sum></small></span>
-          <label class="line__qty inv-input"><input name="actual" inputmode="decimal" aria-label="Факт: ${esc(p.name)}" placeholder="Факт" autocomplete="off"><span data-unit>${esc(p.unit)}</span></label>
-        </div>`).join('')}`).join('');
-    return `
-      <form class="ext-card doc-form" data-inv-form novalidate>
-        <h3>Инвентаризация</h3>
-        <p class="crm-note">Впишите, сколько сырья есть на самом деле. Пустые строки не меняются — можно считать по частям, например только рыбу.</p>
-        <div class="list">${rows}</div>
-        <div class="doc-fields">
-          <label class="cz-f"><span>Комментарий</span><input id="inv-note" name="note" autocomplete="off" placeholder="Необязательно"></label>
-          <label class="cz-f"><span>Дата</span><input id="inv-date" name="date" type="date" value="${esc(S.data.today)}"></label>
-        </div>
-        <p class="crm-note" data-inv-total>Пока ничего не пересчитано</p>
-        <p class="cz-err" data-err></p>
-        <button type="submit" class="crm-btn crm-btn--block">Провести инвентаризацию</button>
-      </form>`;
-  }
-
-  function updateInvForm(form) {
-    let count = 0, shortage = 0, surplus = 0;
-    form.querySelectorAll('[data-inv]').forEach((row) => {
-      const p = byId(row.dataset.inv);
-      const raw = row.querySelector('[name="actual"]').value.trim();
-      const v = num(raw);
-      const diffEl = row.querySelector('[data-diff]'), sumEl = row.querySelector('[data-diff-sum]');
-      if (raw === '' || !Number.isFinite(v) || v < 0) { diffEl.textContent = ''; sumEl.textContent = ''; diffEl.className = ''; return; }
-      count += 1;
-      const diff = Math.round((v - p.qty) * 1000) / 1000;
-      const money = diff * p.avgPrice;
-      if (money < 0) shortage -= money; else surplus += money;
-      diffEl.textContent = diff === 0 ? 'сходится' : `${diff > 0 ? '+' : ''}${qtyText(diff)} ${p.unit}`;
-      diffEl.className = diff < 0 ? 'neg' : diff > 0 ? 'pos' : '';
-      sumEl.textContent = money ? (money < 0 ? '−' : '+') + rub(Math.abs(money)) : '';
-    });
-    form.querySelector('[data-inv-total]').textContent = count
-      ? `Пересчитано: ${plural(count, 'позиция', 'позиции', 'позиций')}${shortage ? ` · недостача ${rub(shortage)}` : ''}${surplus ? ` · излишек ${rub(surplus)}` : ''}${!shortage && !surplus ? ' · всё сходится' : ''}`
-      : 'Пока ничего не пересчитано';
-  }
-
-  async function submitInventory(box, form) {
-    const err = form.querySelector('[data-err]');
-    const counts = [];
-    let bad = '';
-    form.querySelectorAll('[data-inv]').forEach((row) => {
-      const raw = row.querySelector('[name="actual"]').value.trim();
-      if (raw === '') return;
-      if (!(num(raw) >= 0)) { bad = byId(row.dataset.inv).name; return; }
-      counts.push({ productId: Number(row.dataset.inv), actual: raw });
-    });
-    if (bad) { err.textContent = `Неверный остаток: ${bad}`; return; }
-    if (!counts.length) { err.textContent = 'Впишите фактический остаток хотя бы по одной позиции'; return; }
-    const btn = form.querySelector('button[type="submit"]');
-    btn.disabled = true;
-    try {
-      const r = await api('POST', '/api/staff/stock/inventory', { date: form.date.value, note: form.note.value.trim(), counts });
-      CRM.toast(r.shortage || r.surplus ? `Инвентаризация проведена: недостача ${rub(r.shortage)}, излишек ${rub(r.surplus)}` : 'Инвентаризация проведена: всё сошлось');
-      await refresh();
-      renderSection(box);
-    } catch (e) {
-      err.textContent = errText(e);
-      btn.disabled = false;
-    }
-  }
-
   // ---------- Журнал документов ----------
   function docsHTML(kind) {
     const docs = S.docs[kind] || [];
     if (!docs.length) return `<div class="list"><p class="list-empty">${kind === 'writeoff' ? 'За месяц ничего не списывали' : 'За месяц документов нет'}</p></div>`;
     return `<div class="list">${docs.map((d) => {
       const open = S.openDoc === d.id;
-      const title = kind === 'receipt' ? esc(d.supplier) : kind === 'writeoff' ? esc(d.reason) : 'Инвентаризация';
+      const title = kind === 'receipt' ? esc(d.supplier) : esc(d.reason);
       const sub = [dateText(d.date), kind === 'receipt' && d.number ? '№ ' + esc(d.number) : '', d.note ? esc(d.note) : '', esc(d.by)].filter(Boolean).join(' · ');
       const dot = kind === 'writeoff' ? `style="background:${reasonColor(d.reason)}"` : '';
-      const dotClass = kind === 'inventory' ? (d.total < 0 ? 'sdot--out' : 'sdot--ok') : kind === 'receipt' ? 'sdot--ok' : '';
-      const amount = kind === 'inventory'
-        ? `<b class="${d.total < 0 ? 'neg' : d.total > 0 ? 'pos' : ''}">${d.total === 0 ? 'сошлось' : (d.total < 0 ? '−' : '+') + rub(Math.abs(d.total))}</b>`
-        : `<b>${rub(d.total)}</b>`;
+      const dotClass = kind === 'receipt' ? 'sdot--ok' : '';
+      const amount = `<b>${rub(d.total)}</b>`;
       const lines = !open ? '' : `
-        <div class="list-detail"><div class="list-sub">${d.lines.map((l) => kind === 'inventory'
-          ? `<div><span>${esc(l.name)}<br><small>учёт ${qtyText(l.system)} → факт ${qtyText(l.system + l.qty)} ${esc(l.unit)}</small></span><b class="${l.qty < 0 ? 'neg' : l.qty > 0 ? 'pos' : ''}">${l.qty > 0 ? '+' : ''}${qtyText(l.qty)} ${esc(l.unit)}</b></div>`
-          : `<div><span>${esc(l.name)}<br><small>${qtyText(Math.abs(l.qty))} ${esc(l.unit)} × ${rub(l.price)}${l.expiry ? ' · годен до ' + dayText(l.expiry) : ''}</small></span><b>${rub(Math.abs(l.qty) * l.price)}</b></div>`).join('')}</div></div>`;
+        <div class="list-detail"><div class="list-sub">${d.lines.map((l) => `<div><span>${esc(l.name)}<br><small>${qtyText(Math.abs(l.qty))} ${esc(l.unit)} × ${rub(l.price)}${l.expiry ? ' · годен до ' + dayText(l.expiry) : ''}</small></span><b>${rub(Math.abs(l.qty) * l.price)}</b></div>`).join('')}</div></div>`;
       return `
         <div class="list-row ${open ? 'is-open' : ''}" data-doc="${d.id}" tabindex="0" aria-expanded="${open}">
           <span class="sdot ${dotClass}" ${dot}></span>
@@ -577,9 +499,7 @@
       const err = form && form.querySelector('[data-err]');
       if (err) err.textContent = ''; // исправляют — убираем старую подсказку
       const doc = e.target.closest('[data-doc-form]');
-      if (doc) { updateDocForm(doc); return; }
-      const inv = e.target.closest('[data-inv-form]');
-      if (inv) updateInvForm(inv);
+      if (doc) updateDocForm(doc);
     };
     box.addEventListener('input', onEdit);
     box.addEventListener('change', onEdit);
@@ -587,7 +507,6 @@
       e.preventDefault();
       const f = e.target;
       if (f.matches('[data-doc-form]')) submitDoc(box, f);
-      else if (f.matches('[data-inv-form]')) submitInventory(box, f);
       else if (f.matches('[data-product-form-el]')) saveProduct(box, f);
     });
     box.addEventListener('keydown', (e) => {

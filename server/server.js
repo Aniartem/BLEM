@@ -12,6 +12,7 @@ const { createAuth } = require('./auth');
 const { createTelegram, STATUS } = require('./telegram');
 const { createShifts } = require('./shifts');
 const { createStock } = require('./stock');
+const { createRevisions } = require('./revisions');
 const { createTechCards } = require('./techcards');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -125,6 +126,7 @@ function createApp(cfg, { log = console } = {}) {
   const broadcast = (order) => broadcastEvent('order', order);
   const stock = createStock({ db, tg, timeZone: cfg.timeZone, log });
   const techcards = createTechCards({ db, stock, getMenu: () => menu, log });
+  const revisions = createRevisions({ db, stock, tg, log });
   const KITCHEN_STATUSES = new Set(['cooking', 'delivering', 'done']);
   const shifts = createShifts({ db, secureCookies: cfg.secureCookies, broadcast: broadcastEvent, tg, timeZone: cfg.timeZone, photoDir: cfg.photoDir, photoDays: cfg.photoDays, log });
 
@@ -263,8 +265,9 @@ function createApp(cfg, { log = console } = {}) {
   const shiftRoutes = shifts.routes({ send, readJson, staff, sameOrigin });
   const stockRoutes = stock.routes({ send, readJson, staff: manager, sameOrigin });
   const techRoutes = techcards.routes({ send, readJson, kitchen, sameOrigin });
-  Object.assign(routes, shiftRoutes.exact, stockRoutes.exact, techRoutes.exact);
-  const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern, ...techRoutes.pattern];
+  const revisionRoutes = revisions.routes({ send, readJson, kitchen, manager, sameOrigin });
+  Object.assign(routes, shiftRoutes.exact, stockRoutes.exact, techRoutes.exact, revisionRoutes.exact);
+  const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern, ...techRoutes.pattern, ...revisionRoutes.pattern];
 
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
@@ -332,6 +335,7 @@ function createApp(cfg, { log = console } = {}) {
     shifts,
     stock,
     techcards,
+    revisions,
     setStatus,
     start() {
       tg.start(setStatus);
