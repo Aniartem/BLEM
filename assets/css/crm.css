@@ -18,6 +18,7 @@
 }
 
 body.is-crm > :not(#crm) { display: none !important; }
+.crm [hidden], #crm[hidden] { display: none !important; }
 body.is-crm { background: var(--crm-bg); overflow: auto; }
 body.crm-page { margin: 0; background: var(--crm-bg); color: var(--crm-text); color-scheme: dark; }
 
@@ -77,6 +78,17 @@ body.crm-page { margin: 0; background: var(--crm-bg); color: var(--crm-text); co
 .dot--ok { background: var(--crm-ok); box-shadow: 0 0 0 4px rgba(111, 174, 106, .18); }
 .dot--warn { background: var(--crm-new); }
 .dot--err { background: var(--crm-danger); }
+
+.crm-user { display: inline-flex; align-items: center; gap: 8px; color: var(--crm-muted); }
+.crm-login { display: grid; gap: 12px; max-width: 360px; margin: 40px auto; padding: 24px; border-radius: 14px; background: var(--crm-panel); border: 1px solid var(--crm-line); }
+.crm-login h2 { margin: 0; font: 500 26px/1.2 var(--crm-serif); }
+.crm-login p { margin: 0; color: var(--crm-muted); }
+.crm-login label { display: grid; gap: 4px; }
+.crm-login label span { font-size: 12px; color: var(--crm-muted); }
+.crm-login input { height: 42px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--crm-line); background: var(--crm-bg); outline: none; }
+.crm-login input:focus { border-color: var(--crm-gold); }
+.crm-login .crm-login__err { min-height: 18px; color: var(--crm-danger); font-size: 13px; }
+.dr-hist em { font-style: normal; color: var(--crm-muted); }
 
 /* сводка */
 .crm-stats {

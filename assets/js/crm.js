@@ -32,7 +32,11 @@
     seen: null,
     fresh: new Set(),
     kind: null,
-    error: ''
+    error: '',
+    user: null,
+    needLogin: false,
+    loginError: '',
+    unsubscribe: null
   };
   try { state.sound = localStorage.getItem('rollevich-crm-sound') === '1'; } catch (e) { /* ignore */ }
 
@@ -78,6 +82,7 @@
           <label class="crm-search"><input id="crm-search" type="search" placeholder="№, имя или телефон" data-q></label>
           <button type="button" class="crm-btn crm-btn--ghost" data-sound aria-pressed="false">Звук</button>
           <a class="crm-btn crm-btn--ghost" data-to-site href="#">На сайт</a>
+          <span class="crm-user" data-user hidden></span>
         </div>
       </header>
       <div class="crm-status" data-conn></div>
@@ -245,7 +250,7 @@
     if (!o) { d.innerHTML = ''; return; }
     const st = STATUS[o.status] || STATUS.new;
     const items = (o.items || []).map((i) => `<tr><td>${esc(i.name)}</td><td class="r">${i.qty}</td><td class="r">${rub(i.price * i.qty)}</td></tr>`).join('');
-    const hist = (o.history || []).map((h) => `<li><span>${hhmm(h.at)}</span>${esc((STATUS[h.status] || {}).title || h.status)}</li>`).join('');
+    const hist = (o.history || []).map((h) => `<li><span>${hhmm(h.at)}</span>${esc((STATUS[h.status] || {}).title || h.status)}${h.by ? ` <em>· ${esc(h.by)}</em>` : ''}</li>`).join('');
     const options = STATUSES.map((s) => `<option value="${s.id}" ${s.id === o.status ? 'selected' : ''}>${s.title}</option>`).join('');
     d.innerHTML = `
       <div class="dr-head">
@@ -309,14 +314,41 @@
   }
 
   // ---------- Отрисовка ----------
+  function renderLogin() {
+    $('[data-stats]').innerHTML = '';
+    $('[data-main]').innerHTML = `
+      <form class="crm-login" data-login novalidate>
+        <h2>Вход в CRM</h2>
+        <p>Для сотрудников РОЛЛЕВИЧ. Логин и пароль выдаёт администратор.</p>
+        <label><span>Логин</span><input id="crm-login" name="login" autocomplete="username" required></label>
+        <label><span>Пароль</span><input id="crm-password" name="password" type="password" autocomplete="current-password" required></label>
+        <p class="crm-login__err" data-login-err>${esc(state.loginError)}</p>
+        <button type="submit" class="crm-btn crm-btn--block">Войти</button>
+      </form>`;
+    const first = $('#crm-login');
+    if (first && !first.value) first.focus();
+  }
+
   function render() {
+    const userEl = $('[data-user]');
+    userEl.hidden = !state.user;
+    if (state.user) userEl.innerHTML = `${esc(state.user.name)} <button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-logout>Выйти</button>`;
+    root.querySelector('.crm-tabs').hidden = state.needLogin;
+    $('[data-q]').closest('.crm-search').hidden = state.needLogin;
+    if (state.needLogin) {
+      $('[data-conn]').innerHTML = '<span class="dot"></span>Сервер заказов';
+      renderLogin();
+      renderDrawer();
+      document.title = 'Вход · CRM РОЛЛЕВИЧ';
+      return;
+    }
     root.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === state.view)));
     const btn = $('[data-sound]');
     btn.setAttribute('aria-pressed', String(state.sound));
     btn.textContent = state.sound ? 'Звук включён' : 'Звук выключен';
     $('[data-conn]').innerHTML = state.error
       ? `<span class="dot dot--err"></span>${esc(state.error)}`
-      : state.kind === 'db'
+      : state.kind === 'db' || state.kind === 'api'
         ? '<span class="dot dot--ok"></span>Онлайн: заказы с сайта приходят сюда в реальном времени'
         : state.kind === 'local'
           ? '<span class="dot dot--warn"></span>Локальный режим: видны только заказы, оформленные в этом браузере'
@@ -334,9 +366,8 @@
   async function setStatus(id, status) {
     const o = byId(id);
     if (!o || o.status === status) return;
-    const history = [...(o.history || []), { status, at: Date.now() }];
     try {
-      await Store.update(id, { status, history });
+      await Store.setStatus(o, status, state.user ? state.user.name : undefined);
       state.confirmCancel = false;
       state.fresh.delete(id);
       toast(`№ ${o.number}: ${STATUS[status].title.toLowerCase()}`);
@@ -424,6 +455,7 @@
       return;
     }
     if (t.hasAttribute('data-demo')) { createDemo(); return; }
+    if (t.hasAttribute('data-logout')) { logout(); return; }
     if (t.hasAttribute('data-to-site')) { e.preventDefault(); leaveCrm(); return; }
     if (t.hasAttribute('data-close') || t.hasAttribute('data-overlay')) { state.openId = null; state.openClient = null; state.confirmCancel = false; renderDrawer(); return; }
     if (t.dataset.client) { state.openClient = t.dataset.client; state.openId = null; renderDrawer(); return; }
@@ -433,6 +465,28 @@
     if (e.key === 'Escape') { state.openId = null; state.openClient = null; renderDrawer(); }
     if (e.key === 'Enter' && e.target.matches('[data-open], [data-client]')) e.target.click();
   });
+  root.addEventListener('submit', async (e) => {
+    if (!e.target.matches('[data-login]')) return;
+    e.preventDefault();
+    const f = e.target;
+    const btn = f.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      state.user = await Store.login(f.login.value.trim(), f.password.value);
+      state.needLogin = false;
+      state.loginError = '';
+      subscribe();
+      render();
+    } catch (err) {
+      state.loginError = err && err.message ? err.message : 'Не удалось войти. Проверьте интернет.';
+      f.querySelector('[data-login-err]').textContent = state.loginError;
+      f.password.value = '';
+      f.password.focus();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   root.addEventListener('change', (e) => {
     if (e.target.dataset.setStatus) setStatus(e.target.dataset.setStatus, e.target.value);
   });
@@ -460,25 +514,58 @@
   window.addEventListener('hashchange', applyRoute);
 
   // ---------- Данные ----------
-  Store.backend().then((b) => { state.kind = b.kind; if (isCrmRoute()) render(); });
-  Store.subscribe((orders) => {
-    const ids = new Set(orders.map((o) => o.id));
-    if (state.seen) {
-      const added = orders.filter((o) => !state.seen.has(o.id) && o.status === 'new');
-      added.forEach((o) => state.fresh.add(o.id));
-      if (added.length && isCrmRoute()) {
-        beep();
-        toast(added.length === 1 ? `Новый заказ № ${added[0].number} на ${rub(added[0].total)}` : `Новых заказов: ${added.length}`);
+  function subscribe() {
+    if (state.unsubscribe) state.unsubscribe();
+    state.seen = null;
+    Store.subscribe((orders) => {
+      const ids = new Set(orders.map((o) => o.id));
+      if (state.seen) {
+        const added = orders.filter((o) => !state.seen.has(o.id) && o.status === 'new');
+        added.forEach((o) => state.fresh.add(o.id));
+        if (added.length && isCrmRoute()) {
+          beep();
+          toast(added.length === 1 ? `Новый заказ № ${added[0].number} на ${rub(added[0].total)}` : `Новых заказов: ${added.length}`);
+        }
       }
+      state.seen = ids;
+      state.orders = orders;
+      state.error = '';
+      if (isCrmRoute()) render();
+    }, (e) => {
+      if (e && e.code === 'unauthorized') {
+        state.user = null;
+        state.needLogin = true;
+        state.orders = [];
+      } else {
+        state.error = e && e.code === 'revoked' ? 'Доступ к заказам закрыт' : 'Нет связи с базой заказов. Обновите страницу.';
+      }
+      if (isCrmRoute()) render();
+    }).then((unsub) => { state.unsubscribe = unsub; })
+      .catch(() => { state.error = 'Нет связи с базой заказов. Обновите страницу.'; if (isCrmRoute()) render(); });
+  }
+
+  async function logout() {
+    try { await Store.logout(); } catch (e) { /* всё равно выходим */ }
+    if (state.unsubscribe) state.unsubscribe();
+    state.unsubscribe = null;
+    state.user = null;
+    state.orders = [];
+    state.openId = null;
+    state.openClient = null;
+    state.needLogin = true;
+    render();
+  }
+
+  (async () => {
+    const b = await Store.backend();
+    state.kind = b.kind;
+    if (b.kind === 'api') {
+      try { state.user = await Store.me(); } catch (e) { state.error = 'Нет связи с сервером заказов. Обновите страницу.'; }
+      if (!state.user && !state.error) { state.needLogin = true; if (isCrmRoute()) render(); return; }
     }
-    state.seen = ids;
-    state.orders = orders;
-    state.error = '';
+    subscribe();
     if (isCrmRoute()) render();
-  }, (e) => {
-    state.error = e && e.code === 'revoked' ? 'Доступ к заказам закрыт' : 'Нет связи с базой заказов. Обновите страницу.';
-    if (isCrmRoute()) render();
-  }).catch(() => { state.error = 'Нет связи с базой заказов. Обновите страницу.'; });
+  })();
 
   // таймеры «сколько ждёт» обновляем раз в 30 секунд
   setInterval(() => { if (isCrmRoute() && !state.openId && state.view === 'board') { renderStats(); renderBoard(); } }, 30000);

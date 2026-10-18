@@ -278,6 +278,7 @@
       payment: data.payment,
       comment: data.comment.trim(),
       promo: state.promo || '',
+      website: data.website || '',
       items: Object.entries(state.cart).map(([id, q]) => ({ id, name: ITEMS[id].name, qty: q, price: ITEMS[id].price })),
       subtotal: t.subtotal,
       discount: t.discount,
@@ -289,12 +290,15 @@
     sending = true;
     btn.disabled = true;
     btn.textContent = 'Отправляем…';
+    let saved;
     try {
-      await window.RollevichStore.create(order);
+      saved = await window.RollevichStore.create(order);
     } catch (e) {
-      err.textContent = e && e.code === 'quota_exceeded'
-        ? 'Сейчас не можем принять заказ онлайн. Позвоните нам: +7 (3412) 00-00-00'
-        : 'Не удалось отправить заказ. Проверьте интернет и нажмите ещё раз.';
+      err.textContent = e && (e.code === 'rejected' || e.code === 'rate_limited') && e.message
+        ? e.message
+        : e && e.code === 'quota_exceeded'
+          ? 'Сейчас не можем принять заказ онлайн. Позвоните нам: +7 (3412) 00-00-00'
+          : 'Не удалось отправить заказ. Проверьте интернет и нажмите ещё раз.';
       return;
     } finally {
       sending = false;
@@ -303,7 +307,7 @@
     }
 
     $('[data-modal-text]').textContent =
-      `Заказ № ${order.number} принят. ${order.name}, мы перезвоним на ${order.phone} в течение 5 минут, чтобы подтвердить заказ на ${rub(t.total)}.`;
+      `Заказ № ${saved.number} принят. ${order.name}, мы перезвоним на ${order.phone} в течение 5 минут, чтобы подтвердить заказ на ${rub(saved.total)}.`;
     state.cart = {};
     state.promo = null;
     save();

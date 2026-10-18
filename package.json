@@ -1,0 +1,16 @@
+{
+  "name": "rollevich",
+  "version": "1.0.0",
+  "private": true,
+  "description": "РОЛЛЕВИЧ — сайт доставки роллов, CRM и уведомления в Telegram",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test server/test/*.test.js",
+    "user:add": "node --disable-warning=ExperimentalWarning server/manage.js add-user",
+    "user:passwd": "node --disable-warning=ExperimentalWarning server/manage.js passwd",
+    "user:remove": "node --disable-warning=ExperimentalWarning server/manage.js remove-user",
+    "users": "node --disable-warning=ExperimentalWarning server/manage.js users",
+    "backup": "node --disable-warning=ExperimentalWarning server/manage.js backup"
+  }
+}

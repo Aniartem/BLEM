@@ -1,0 +1,3 @@
+# Резервная копия базы каждую ночь в 04:10, хранятся 30 последних.
+# Установка: sudo cp deploy/backup.cron /etc/cron.d/rollevich-backup
+10 4 * * * rollevich cd /opt/rollevich && /usr/bin/node --disable-warning=ExperimentalWarning server/manage.js backup >/dev/null && ls -1t data/backups/*.db | tail -n +31 | xargs -r rm --

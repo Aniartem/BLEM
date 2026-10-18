@@ -528,3 +528,6 @@ input::placeholder, textarea::placeholder { color: #6f675c; }
   .delivery__info { grid-template-columns: 1fr; }
   .footer__inner { grid-template-columns: 1fr; }
 }
+
+/* ловушка для спам-ботов: поле не видно людям */
+.hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; opacity: 0; }
