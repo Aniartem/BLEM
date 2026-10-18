@@ -138,6 +138,7 @@ function createApp(cfg, { log = console } = {}) {
     if (!order) return null;
     if (order.status === status) return order;
     orderPhotos.checkStatus(order, status);
+    const fromKitchen = order.status === 'cooking' && orderPhotos.LEAVING_KITCHEN.has(status);
     order.status = status;
     order.history = [...(order.history || []), { status, at: Date.now(), by }];
     // заказ ушёл на кухню — списываем сырьё по техкартам (один раз; отмена после этого не возвращает)
@@ -153,6 +154,7 @@ function createApp(cfg, { log = console } = {}) {
     db.saveOrder(order);
     broadcast(order);
     tg.syncStatus(order).catch(() => {});
+    if (fromKitchen) tg.sendOrderPhotos(order, orderPhotos.files(order)).catch(() => {}); // кухня отдала — фото в Telegram
     return order;
   }
 

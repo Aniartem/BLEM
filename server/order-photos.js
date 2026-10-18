@@ -93,7 +93,15 @@ function createOrderPhotos({ db, photoDir, broadcast, log = console }) {
     };
   }
 
-  return { routes, checkStatus, add, remove };
+  // фото заказа с диска — для отправки в Telegram
+  function files(order) {
+    if (!dir) return [];
+    return (order.photos || []).map((p) => {
+      try { return { buf: fs.readFileSync(path.join(dir, p.file)), by: p.by, at: p.at }; } catch (e) { return null; }
+    }).filter(Boolean);
+  }
+
+  return { routes, checkStatus, add, remove, files, LEAVING_KITCHEN };
 }
 
 module.exports = { createOrderPhotos };

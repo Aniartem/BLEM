@@ -32,6 +32,14 @@ function createTelegram({ token, chatIds, apiBase = 'https://api.telegram.org', 
     return data.result;
   }
 
+  // загрузка файлов (фото) — multipart/form-data вместо JSON
+  async function callForm(method, form) {
+    const res = await fetch(`${apiBase}/bot${token}/${method}`, { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) throw new Error(`Telegram ${method}: ${data.description || res.status}`);
+    return data.result;
+  }
+
   function text(o) {
     const head = o.source === 'phone'
       ? `☎️ <b>Заказ по телефону № ${o.number}</b>`
@@ -82,6 +90,40 @@ function createTelegram({ token, chatIds, apiBase = 'https://api.telegram.org', 
     if (!enabled) return;
     await Promise.all([...allowed].map((chatId) => call('sendMessage', { chat_id: chatId, text: html, parse_mode: 'HTML' })
       .catch((e) => log.error(`[telegram] не удалось отправить сообщение в чат ${chatId}: ${e.message}`))));
+  }
+
+  // Фото готового заказа — ответом на сообщение о заказе: «Заказ № … передан курьеру».
+  // photos: [{ buf, by, at }]; несколько фото уходят одним альбомом
+  async function sendOrderPhotos(order, photos) {
+    if (!enabled || !photos.length) return;
+    const last = photos[photos.length - 1];
+    const caption = [
+      `📸 <b>Заказ № ${order.number} ${order.method === 'pickup' ? 'готов к выдаче' : 'передан курьеру'}</b>`,
+      `${esc(order.name)} · ${order.method === 'pickup' ? 'самовывоз' : esc(order.address)}`,
+      `Снял(а): ${esc(last.by)} · ${time(last.at)}`
+    ].join('\n');
+    const replyTo = new Map(db.tgMessages(order.id).map((m) => [String(m.chat_id), m.message_id]));
+    await Promise.all([...allowed].map(async (chatId) => {
+      const form = new FormData();
+      form.append('chat_id', chatId);
+      if (replyTo.has(chatId)) form.append('reply_parameters', JSON.stringify({ message_id: replyTo.get(chatId), allow_sending_without_reply: true }));
+      const blob = (p) => new Blob([p.buf], { type: 'image/jpeg' });
+      try {
+        if (photos.length === 1) {
+          form.append('photo', blob(photos[0]), `order-${order.number}.jpg`);
+          form.append('caption', caption);
+          form.append('parse_mode', 'HTML');
+          await callForm('sendPhoto', form);
+        } else {
+          const media = photos.slice(0, 10).map((p, i) => ({ type: 'photo', media: `attach://p${i}`, ...(i === 0 ? { caption, parse_mode: 'HTML' } : {}) }));
+          form.append('media', JSON.stringify(media));
+          photos.slice(0, 10).forEach((p, i) => form.append(`p${i}`, blob(p), `order-${order.number}-${i + 1}.jpg`));
+          await callForm('sendMediaGroup', form);
+        }
+      } catch (e) {
+        log.error(`[telegram] не удалось отправить фото заказа № ${order.number} в чат ${chatId}: ${e.message}`);
+      }
+    }));
   }
 
   async function syncStatus(order) {
@@ -153,6 +195,7 @@ function createTelegram({ token, chatIds, apiBase = 'https://api.telegram.org', 
     notifyNew,
     syncStatus,
     broadcastText,
+    sendOrderPhotos,
     text,
     start(statusHandler) {
       onStatus = statusHandler;
