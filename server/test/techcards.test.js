@@ -4,6 +4,10 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { createApp } = require('../server');
 const { hashPassword } = require('../auth');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const JPEG = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(800), Buffer.from([0xff, 0xd9])]).toString('base64');
 
 let app, base, boss, cook, adm;
 const silent = { log() {}, error() {} };
@@ -21,7 +25,7 @@ let P; // название сырья → id
 const qtyOf = async (name) => (await json(await api('GET', '/api/staff/stock', null, boss))).products.find((p) => p.name === name).qty;
 
 before(async () => {
-  app = createApp({ port: 0, host: '127.0.0.1', dbFile: ':memory:', publicUrl: '', secureCookies: false, trustProxy: false, timeZone: 'Europe/Samara', telegram: { token: '', chatIds: [] } }, { log: silent });
+  app = createApp({ port: 0, host: '127.0.0.1', dbFile: ':memory:', publicUrl: '', secureCookies: false, trustProxy: false, timeZone: 'Europe/Samara', photoDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rv-tc-')), telegram: { token: '', chatIds: [] } }, { log: silent });
   base = `http://127.0.0.1:${(await app.start()).port}`;
   app.db.addUser('anna', 'Анна', hashPassword('anna-pass-1'), 'manager');
   app.db.addUser('olga', 'Ольга', hashPassword('olga-pass-1'), 'admin');
@@ -153,7 +157,8 @@ test('заказ на кухне — сырьё списывается по те
   assert.equal(res.order.stockDeducted, true);
   assert.deepEqual(res.order.stockMissing, ['Тори']);
 
-  await api('PATCH', `/api/orders/${r.id}`, { status: 'done' }, boss);
+  await api('POST', `/api/staff/orders/${r.id}/photos`, { photo: JPEG }, boss); // готовый заказ сфотографирован
+  assert.equal((await api('PATCH', `/api/orders/${r.id}`, { status: 'done' }, boss)).status, 200);
   assert.equal(await qtyOf('Лосось охлаждённый'), Math.round((salmon0 - 0.24) * 1000) / 1000); // второй раз не списывается
 
   const sales = await json(await api('GET', '/api/staff/stock/docs?kind=sale', null, boss));

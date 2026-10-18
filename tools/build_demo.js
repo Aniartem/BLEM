@@ -9,7 +9,7 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const out = path.resolve(process.argv[2] || path.join(ROOT, 'demo-build'));
-const SERVER_MODULES = ['server', 'db', 'auth', 'pricing', 'telegram', 'shifts', 'stock', 'techcards', 'revisions'];
+const SERVER_MODULES = ['server', 'db', 'auth', 'pricing', 'telegram', 'shifts', 'stock', 'techcards', 'revisions', 'order-photos'];
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'demo'), { recursive: true });

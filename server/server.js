@@ -13,6 +13,7 @@ const { createTelegram, STATUS } = require('./telegram');
 const { createShifts } = require('./shifts');
 const { createStock } = require('./stock');
 const { createRevisions } = require('./revisions');
+const { createOrderPhotos } = require('./order-photos');
 const { createTechCards } = require('./techcards');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -127,6 +128,7 @@ function createApp(cfg, { log = console } = {}) {
   const stock = createStock({ db, tg, timeZone: cfg.timeZone, log });
   const techcards = createTechCards({ db, stock, getMenu: () => menu, log });
   const revisions = createRevisions({ db, stock, tg, log });
+  const orderPhotos = createOrderPhotos({ db, photoDir: cfg.photoDir, broadcast, log });
   const KITCHEN_STATUSES = new Set(['cooking', 'delivering', 'done']);
   const shifts = createShifts({ db, secureCookies: cfg.secureCookies, broadcast: broadcastEvent, tg, timeZone: cfg.timeZone, photoDir: cfg.photoDir, photoDays: cfg.photoDays, log });
 
@@ -135,6 +137,7 @@ function createApp(cfg, { log = console } = {}) {
     const order = db.getOrder(id);
     if (!order) return null;
     if (order.status === status) return order;
+    orderPhotos.checkStatus(order, status);
     order.status = status;
     order.history = [...(order.history || []), { status, at: Date.now(), by }];
     // заказ ушёл на кухню — списываем сырьё по техкартам (один раз; отмена после этого не возвращает)
@@ -266,8 +269,9 @@ function createApp(cfg, { log = console } = {}) {
   const stockRoutes = stock.routes({ send, readJson, staff: manager, sameOrigin });
   const techRoutes = techcards.routes({ send, readJson, kitchen, sameOrigin });
   const revisionRoutes = revisions.routes({ send, readJson, kitchen, manager, sameOrigin });
+  const photoRoutes = orderPhotos.routes({ send, readJson, staff, sameOrigin });
   Object.assign(routes, shiftRoutes.exact, stockRoutes.exact, techRoutes.exact, revisionRoutes.exact);
-  const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern, ...techRoutes.pattern, ...revisionRoutes.pattern];
+  const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern, ...techRoutes.pattern, ...revisionRoutes.pattern, ...photoRoutes.pattern];
 
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');

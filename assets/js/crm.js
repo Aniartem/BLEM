@@ -84,7 +84,8 @@
     site: '<path d="M7 17 17 7M8 7h9v9"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
     chevron: '<path d="m9 18 6-6-6-6"/>',
-    clipboard: '<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/>'
+    clipboard: '<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/>',
+    camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'
   };
   const icon = (name) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
   const ROLE_TEXT = { manager: 'Управляющий', admin: 'Администратор', cook: 'Повар' };
@@ -128,6 +129,7 @@
       <aside class="crm-drawer" data-drawer aria-hidden="true"></aside>
       <div class="crm-compose" data-compose hidden></div>
       <div class="crm-toast" data-toast role="status"></div>
+      <div class="crm-lightbox" data-photo-box hidden><figure><img alt="Фото заказа"><figcaption></figcaption></figure></div>
     </div>`;
   const $ = (s) => root.querySelector(s);
 
@@ -173,8 +175,9 @@
         ${o.time && o.time !== 'Как можно скорее' ? `<div class="ocard__when">${esc(o.time)}</div>` : ''}
         <div class="ocard__items">${esc(itemsLine(o))}</div>
         <div class="ocard__foot">
-          <b>${rub(o.total)}</b>
-          ${st.next ? `<button type="button" class="crm-btn crm-btn--small" data-advance="${esc(o.id)}">${st.next} →</button>` : ''}
+          <b>${rub(o.total)}</b>${photoCount(o)}
+          ${needsPhoto(o) ? `<button type="button" class="crm-btn crm-btn--small" data-photo-advance="${esc(o.id)}">${icon('camera')}Сфотографировать</button>`
+            : st.next ? `<button type="button" class="crm-btn crm-btn--small" data-advance="${esc(o.id)}">${st.next} →</button>` : ''}
         </div>
       </article>`;
   }
@@ -305,6 +308,7 @@
           <div class="kv"><span>Оплата</span><b>${esc(o.payment || '—')}</b></div>
           ${o.comment ? `<div class="kv kv--note"><span>Комментарий</span><b>${esc(o.comment)}</b></div>` : ''}
         </div>
+        ${photosHTML(o)}
         <table class="tbl tbl--items"><tbody>${items}</tbody></table>
         <dl class="dr-totals">
           <div><dt>Блюда</dt><dd>${rub(o.subtotal)}</dd></div>
@@ -316,7 +320,8 @@
         <ul class="dr-hist">${hist}</ul>
       </div>
       <div class="dr-foot">
-        ${st.next ? `<button type="button" class="crm-btn crm-btn--block" data-advance="${esc(o.id)}">${st.next} →</button>` : ''}
+        ${needsPhoto(o) ? `<button type="button" class="crm-btn crm-btn--block" data-photo-advance="${esc(o.id)}">${icon('camera')}Сфотографировать и ${o.method === 'pickup' ? 'выдать' : 'передать курьеру'}</button>`
+          : st.next ? `<button type="button" class="crm-btn crm-btn--block" data-advance="${esc(o.id)}">${st.next} →</button>` : ''}
         <button type="button" class="crm-btn crm-btn--ghost" data-repeat="${esc(o.id)}">Повторить заказ по телефону</button>
         <div class="dr-row">
           <label class="dr-select"><span>Статус</span><select id="crm-status-select" data-set-status="${esc(o.id)}">${options}</select></label>
@@ -450,8 +455,83 @@
       state.fresh.delete(id);
       toast(`№ ${o.number}: ${STATUS[status].title.toLowerCase()}`);
     } catch (e) {
-      toast('Не удалось сохранить статус. Проверьте интернет и повторите.');
+      toast(e && e.status === 409 && e.message ? e.message : 'Не удалось сохранить статус. Проверьте интернет и повторите.');
     }
+  }
+
+  // ---------- Фото готового заказа: кухня отдала — администратор снимает, без фото дальше нельзя ----------
+  const photosOn = () => state.kind === 'api';
+  const needsPhoto = (o) => photosOn() && o.status === 'cooking' && !(o.photos || []).length;
+  const photoUrl = (o, p) => `/api/staff/orders/${encodeURIComponent(o.id)}/photos/${p.n}`;
+  const photoCount = (o) => ((o.photos || []).length ? `<span class="ocard__photos" title="Фото заказа">${icon('camera')}${o.photos.length}</span>` : '');
+
+  function photosHTML(o) {
+    if (!photosOn() || o.status === 'cancelled' && !(o.photos || []).length) return '';
+    const photos = o.photos || [];
+    return `
+      <div class="dr-photos">
+        <h4>Фото заказа</h4>
+        ${photos.length ? `<div class="dr-photos__grid">${photos.map((p) => `
+          <figure class="dr-photo">
+            <button type="button" class="dr-photo__img" data-photo-view="${esc(photoUrl(o, p))}" data-photo-cap="${esc(`${hhmm(p.at)} · ${p.by}`)}" aria-label="Открыть фото"><img src="${esc(photoUrl(o, p))}" alt="Фото заказа № ${esc(o.number)}"></button>
+            <figcaption>${hhmm(p.at)} · ${esc(p.by)}</figcaption>
+            <button type="button" class="cz-del dr-photo__del" data-photo-del="${esc(o.id)}" data-photo-n="${p.n}" aria-label="Удалить фото">×</button>
+          </figure>`).join('')}</div>`
+          : `<p class="crm-note">${o.status === 'cooking' ? 'Когда кухня отдаст заказ, сфотографируйте его — без фото заказ не уйдёт дальше.' : 'Фото пока нет.'}</p>`}
+        ${o.status !== 'cancelled' && photos.length < 6 ? `<button type="button" class="crm-btn crm-btn--ghost crm-btn--small" data-photo-add="${esc(o.id)}">${icon('camera')}${photos.length ? 'Ещё фото' : 'Сфотографировать'}</button>` : ''}
+      </div>`;
+  }
+
+  // снимок с камеры телефона → JPEG до 1600 px, чтобы фото весило сотни килобайт, а не мегабайты
+  function shrink(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * k);
+        c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не получилось открыть снимок')); };
+      img.src = url;
+    });
+  }
+
+  // кнопка открывает камеру (на компьютере — выбор файла); после снимка заказ можно сразу передать дальше
+  function takePhoto(id, thenAdvance) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.setAttribute('capture', 'environment');
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      toast('Загружаем фото…');
+      try {
+        const photo = await shrink(file);
+        const r = await Store.request('POST', `/api/staff/orders/${encodeURIComponent(id)}/photos`, { photo });
+        const i = state.orders.findIndex((o) => o.id === id);
+        if (i >= 0) state.orders[i] = r.order;
+        if (thenAdvance) { await setStatus(id, FLOW[FLOW.indexOf('cooking') + 1]); return; }
+        toast('Фото прикреплено к заказу');
+        render();
+      } catch (e) { toast(e && e.message ? e.message : 'Не удалось загрузить фото. Попробуйте ещё раз.'); }
+    });
+    input.click();
+  }
+
+  async function deletePhoto(id, n) {
+    try {
+      const r = await Store.request('DELETE', `/api/staff/orders/${encodeURIComponent(id)}/photos/${n}`);
+      const i = state.orders.findIndex((o) => o.id === id);
+      if (i >= 0) state.orders[i] = r.order;
+      toast('Фото удалено');
+      render();
+    } catch (e) { toast(e && e.message ? e.message : 'Не удалось удалить фото'); }
   }
 
   function advance(id) {
@@ -786,12 +866,23 @@
 
   // ---------- События ----------
   root.addEventListener('click', (e) => {
-    const t = e.target.closest('button, a, [data-open], [data-client], [data-overlay], [data-side-close]');
+    const t = e.target.closest('button, a, [data-open], [data-client], [data-overlay], [data-side-close], [data-photo-box]');
     if (!t) return;
+    if (t.hasAttribute('data-photo-box')) { t.hidden = true; return; }
     if (t.dataset.view) { state.view = t.dataset.view; setSide(false); render(); window.scrollTo(0, 0); return; }
     if (t.hasAttribute('data-side-open')) { setSide(true); return; }
     if (t.hasAttribute('data-side-close')) { setSide(false); return; }
     if (t.dataset.advance) { e.stopPropagation(); advance(t.dataset.advance); return; }
+    if (t.dataset.photoAdvance) { e.stopPropagation(); takePhoto(t.dataset.photoAdvance, true); return; }
+    if (t.dataset.photoAdd) { takePhoto(t.dataset.photoAdd, false); return; }
+    if (t.dataset.photoDel) { deletePhoto(t.dataset.photoDel, t.dataset.photoN); return; }
+    if (t.dataset.photoView) {
+      const box = $('[data-photo-box]');
+      box.querySelector('img').src = t.querySelector('img').src;
+      box.querySelector('figcaption').textContent = t.dataset.photoCap;
+      box.hidden = false;
+      return;
+    }
     if (t.dataset.cancel) { state.confirmCancel = true; renderDrawer(); return; }
     if (t.hasAttribute('data-cancel-no')) { state.confirmCancel = false; renderDrawer(); return; }
     if (t.dataset.cancelYes) { setStatus(t.dataset.cancelYes, 'cancelled'); return; }
@@ -833,6 +924,7 @@
     if (!isCrmRoute()) return;
     if (e.key === 'Escape') {
       if (draft) { closeCompose(); return; }
+      if (!$('[data-photo-box]').hidden) { $('[data-photo-box]').hidden = true; return; }
       setSide(false);
       state.openId = null; state.openClient = null; renderDrawer();
     }

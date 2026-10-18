@@ -570,7 +570,16 @@
     const p2 = await phoneOrder(order('Михаил', '+7 (904) 834-22-90', [['maki-set-24-pcs', 1], ['ramen-with-chicken', 2]], { address: 'ул. Ленина, 21' }));
     const p3 = await phoneOrder(order('Екатерина', '+7 (912) 445-10-20', [['philadelphia-with-cucumber', 1]]));
     const ids = (await anna('GET', '/api/orders')).orders.reduce((m, o) => { m[o.number] = o.id; return m; }, {});
-    const to = async (num, statuses) => { for (const s of statuses) await anna('PATCH', `/api/orders/${ids[num]}`, { status: s }); };
+    // заказ уходит из кухни только с фото — для примеров рисуем «снимок» готового заказа
+    const to = async (num, statuses) => {
+      for (const s of statuses) {
+        if (s === 'delivering' || s === 'done') {
+          const o = (await anna('GET', '/api/orders')).orders.find((x) => x.id === ids[num]);
+          if (o.status === 'cooking' && !(o.photos || []).length) await anna('POST', `/api/staff/orders/${ids[num]}/photos`, { photo: demoPhoto(num) });
+        }
+        await anna('PATCH', `/api/orders/${ids[num]}`, { status: s });
+      }
+    };
     const n = (r) => (r && (r.number || (r.order && r.order.number)));
     await to(n(placed[1]), ['accepted']);
     await to(n(p1), ['cooking', 'delivering', 'done']);
@@ -585,6 +594,28 @@
       await chef('PUT', `/api/staff/revisions/${rev.id}/counts/${P['Соевый соус']}`, { qty: 10 });
       await boss('POST', `/api/staff/revisions/${rev.id}/close`);
     }
+  }
+
+  // «фото» готового заказа для демо-данных: коробка с роллами сверху
+  function demoPhoto(seed) {
+    const c = document.createElement('canvas');
+    c.width = 800; c.height = 600;
+    const g = c.getContext('2d');
+    g.fillStyle = '#8a6a4a'; g.fillRect(0, 0, 800, 600);                     // стол
+    g.fillStyle = '#151311'; g.fillRect(110, 90, 580, 420);                   // коробка
+    g.strokeStyle = '#c9a45c'; g.lineWidth = 6; g.strokeRect(110, 90, 580, 420);
+    const fills = ['#f08a5d', '#f6f1e7', '#e85d4a', '#f2a65a'];
+    for (let r = 0; r < 3; r++) {
+      for (let i = 0; i < 5; i++) {
+        const x = 175 + i * 112, y = 170 + r * 130;
+        g.fillStyle = fills[(i + r + seed) % fills.length]; g.beginPath(); g.arc(x, y, 46, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#fbf7ef'; g.beginPath(); g.arc(x, y, 30, 0, Math.PI * 2); g.fill();
+        g.fillStyle = (i + r) % 2 ? '#6aa84f' : '#e8724a'; g.beginPath(); g.arc(x, y, 13, 0, Math.PI * 2); g.fill();
+      }
+    }
+    g.fillStyle = 'rgba(255,255,255,.85)'; g.font = '600 26px sans-serif';
+    g.fillText(`РОЛЛЕВИЧ · заказ № ${seed}`, 130, 560);
+    return c.toDataURL('image/jpeg', 0.82);
   }
 
   // ---------------------------------------------------------------- панель «Демо»

@@ -233,6 +233,18 @@ body.crm-page { margin: 0; background: var(--bg); color: var(--text); }
 .ocard__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
 .ocard__foot b { font-size: 17px; font-weight: 600; }
 
+/* фото готового заказа */
+.ocard__photos { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--muted); font-size: 13px; }
+.ocard__photos .ico { width: 15px; height: 15px; }
+.ocard__foot > b { flex: 1; }
+.dr-photos { display: grid; gap: 10px; justify-items: start; }
+.dr-photos h4 { margin: 6px 0 0 !important; }
+.dr-photos__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
+.dr-photo { position: relative; margin: 0; display: grid; gap: 4px; min-width: 0; }
+.dr-photo__img { display: block; padding: 0; border: 0; border-radius: 12px; overflow: hidden; aspect-ratio: 1; background: var(--fill); cursor: zoom-in; max-width: 100%; }
+.dr-photo__img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dr-photo figcaption { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-photo__del { position: absolute; top: 6px; right: 6px; background: rgba(0, 0, 0, .55); color: #fff; }
 .pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--fill); color: var(--muted); white-space: nowrap; vertical-align: 1px; }
 .pill--new { background: var(--orange-bg); color: var(--orange); }
 .pill--accepted, .pill--pickup, .pill--phone { background: var(--blue-bg); color: var(--blue); }
