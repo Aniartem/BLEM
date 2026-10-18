@@ -104,6 +104,7 @@ test('приход по накладной: остатки, средняя це�
 
 test('списание: остаток уменьшается, при переходе через минимум — сообщение в Telegram', async () => {
   assert.match((await json(await api('POST', '/api/staff/stock/writeoffs', { reason: 'Съели', lines: [{ productId: pid('Лосось охлаждённый'), qty: 1 }] }))).error, /причину/);
+  assert.match((await json(await api('POST', '/api/staff/stock/writeoffs', { reason: 'Другое', lines: [{ productId: pid('Лосось охлаждённый'), qty: 1 }] }))).error, /комментарии/);
   sent.length = 0;
   const r = await json(await api('POST', '/api/staff/stock/writeoffs', { reason: 'Порча', note: 'Холодильник', lines: [{ productId: pid('Лосось охлаждённый'), qty: 6.5 }] }));
   assert.equal(r.status, 201);

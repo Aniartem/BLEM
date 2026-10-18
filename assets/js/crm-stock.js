@@ -384,6 +384,7 @@
       lines.push(line);
     });
     if (kind === 'receipt' && !form.supplier.value.trim()) problems.unshift('поставщик');
+    if (kind === 'writeoff' && form.reason.value === 'Другое' && !form.note.value.trim()) problems.unshift('комментарий — для причины «Другое» напишите, что случилось');
     if (!lines.length && !problems.length) problems.push('добавьте хотя бы одну позицию');
     if (problems.length) { err.textContent = 'Проверьте: ' + problems.join(', '); return; }
     const body = kind === 'receipt'

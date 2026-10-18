@@ -214,6 +214,7 @@ function createStock({ db, raw = db.raw, tg, timeZone = 'Europe/Samara', log = c
     if (!Array.isArray(body.lines) || !body.lines.length) throw new StockError('Добавьте хотя бы одну позицию для списания');
     const reason = WRITEOFF_REASONS.includes(body.reason) ? body.reason : null;
     if (!reason) throw new StockError('Выберите причину списания');
+    if (reason === 'Другое' && !clean(body.note, 300)) throw new StockError('Для причины «Другое» напишите в комментарии, что случилось');
     const before = snapshotQty();
     const views = new Map(q.products.all().map((r) => [r.id, productView(r)]));
     const lines = body.lines.map((l, i) => {
