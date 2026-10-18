@@ -10,6 +10,7 @@
     "user:add": "node --disable-warning=ExperimentalWarning server/manage.js add-user",
     "user:passwd": "node --disable-warning=ExperimentalWarning server/manage.js passwd",
     "user:remove": "node --disable-warning=ExperimentalWarning server/manage.js remove-user",
+    "user:role": "node --disable-warning=ExperimentalWarning server/manage.js role",
     "users": "node --disable-warning=ExperimentalWarning server/manage.js users",
     "backup": "node --disable-warning=ExperimentalWarning server/manage.js backup"
   }

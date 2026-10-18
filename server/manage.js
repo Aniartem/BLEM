@@ -37,18 +37,25 @@ async function newPassword() {
   return hashPassword(p1);
 }
 
+const ROLE_TEXT = { manager: 'управляющий', admin: 'администратор', cook: 'повар (только техкарты)' };
+
 async function main() {
   const args = process.argv.slice(2);
-  const cook = args.includes('--cook');
-  const [cmd, a, b] = args.filter((x) => x !== '--cook');
+  const role = args.includes('--manager') ? 'manager' : args.includes('--cook') ? 'cook' : 'admin';
+  const [cmd, a, b] = args.filter((x) => x !== '--cook' && x !== '--manager');
   const db = open(cfg.dbFile);
   try {
     if (cmd === 'add-user') {
       const login = String(a || '').trim().toLowerCase();
       if (!/^[a-z0-9._-]{3,32}$/.test(login)) throw new Error('Логин: 3–32 латинские буквы, цифры, точка, дефис');
       if (db.userByLogin(login)) throw new Error(`Сотрудник ${login} уже есть`);
-      db.addUser(login, String(b || login).trim(), await newPassword(), cook ? 'cook' : 'admin');
-      console.log(`Добавлен ${cook ? 'повар (только техкарты)' : 'администратор'}: ${login}`);
+      db.addUser(login, String(b || login).trim(), await newPassword(), role);
+      console.log(`Добавлен ${ROLE_TEXT[role]}: ${login}`);
+    } else if (cmd === 'role') {
+      const login = String(a || '').toLowerCase();
+      if (!ROLE_TEXT[b]) throw new Error('Роль: manager (управляющий), admin (администратор) или cook (повар)');
+      if (!db.setRole(login, b)) throw new Error('Нет такого сотрудника');
+      console.log(`${login}: теперь ${ROLE_TEXT[b]}`);
     } else if (cmd === 'passwd') {
       if (!db.userByLogin(String(a || '').toLowerCase())) throw new Error('Нет такого сотрудника');
       db.setPassword(String(a).toLowerCase(), await newPassword());
@@ -58,14 +65,14 @@ async function main() {
     } else if (cmd === 'users') {
       const list = db.listUsers();
       if (!list.length) console.log('Сотрудников нет');
-      list.forEach((u) => console.log(`${u.login}\t${u.name}\t${u.role === 'cook' ? 'повар' : 'администратор'}\tс ${new Date(u.created_at).toLocaleDateString('ru-RU')}`));
+      list.forEach((u) => console.log(`${u.login}\t${u.name}\t${ROLE_TEXT[u.role] || u.role}\tс ${new Date(u.created_at).toLocaleDateString('ru-RU')}`));
     } else if (cmd === 'backup') {
       const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
       const file = path.resolve(a || path.join(path.dirname(cfg.dbFile), 'backups', `rollevich-${stamp}.db`));
       db.backup(file);
       console.log(`Копия сохранена: ${file}`);
     } else {
-      console.log('Команды: add-user <логин> "<Имя>" | passwd <логин> | remove-user <логин> | users | backup [файл]');
+      console.log('Команды: add-user <логин> "<Имя>" [--manager | --cook] | role <логин> manager|admin|cook | passwd <логин> | remove-user <логин> | users | backup [файл]');
       process.exitCode = 1;
     }
   } finally {

@@ -11,7 +11,7 @@
   const errText = (e) => (e && e.message) || 'Не удалось выполнить. Проверьте интернет и повторите.';
 
   const S = { data: null, q: '', cat: '', filter: 'all', open: null, draft: null, dirty: false };
-  const isAdmin = () => (CRM.user() || {}).role === 'admin';
+  const isAdmin = () => CRM.isManager(); // себестоимость и цены сырья видит только управляющий
   const num = (v) => { const n = Number(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
   const fmt = (n, d = 3) => Number(n || 0).toLocaleString('ru-RU', { maximumFractionDigits: d });
   const norm = (t) => String(t).toLowerCase().replace(/ё/g, 'е');
@@ -34,8 +34,9 @@
       if (main.dataset.ext === 'techcards') return;
       main.dataset.ext = 'techcards';
       main.innerHTML = '<div class="ext" data-tc-root><p class="crm-note">Загружаем техкарты…</p></div>';
-      load().then(() => (S.open ? openEditor(main, S.open) : mountList(main)));
-    }
+      load().then(() => { CRM.head(); return S.open ? openEditor(main, S.open) : mountList(main); });
+    },
+    subtitle: () => (S.data ? `Заполнено ${S.data.filled} из ${S.data.total} блюд` : '')
   };
 
   // ---------- Список ----------
@@ -51,10 +52,6 @@
     const avgFc = fcs.length ? Math.round((fcs.reduce((a, b) => a + b, 0) / fcs.length) * 10) / 10 : null;
     const cats = [...new Set(S.data.dishes.map((d) => d.category))];
     box.innerHTML = `
-      <div class="ext-headline">
-        <h2>Техкарты</h2>
-        <span>Заполнено <b>${S.data.filled}</b> из ${S.data.total} блюд</span>
-      </div>
       <div class="tc-progress"><span style="width:${S.data.total ? (S.data.filled / S.data.total) * 100 : 0}%"></span></div>
       ${admin ? `<p class="crm-note">Средний фудкост заполненных блюд: <b>${avgFc == null ? '—' : fmt(avgFc, 1) + '%'}</b>. Себестоимость считается по средней цене прихода на склад. Когда заказ уходит на кухню, сырьё по техкарте списывается со склада.</p>`
         : '<p class="crm-note">Укажите для каждого блюда сырьё и граммовку на одну порцию, выход и технологию. По этим данным склад будет списывать сырьё, а на сайте появится вес порции.</p>'}
@@ -343,6 +340,7 @@
         S.dirty = false;
         CRM.toast(`Техкарта «${dish(S.open).name}» сохранена`);
         await load();
+        CRM.head();
         openEditor(box.parentElement, S.open);
       } catch (ex) {
         err.textContent = errText(ex);
@@ -351,5 +349,5 @@
     });
   }
 
-  CRM.addView('techcards', 'Техкарты', view);
+  CRM.addView('techcards', 'Техкарты', { group: 'Кухня', icon: 'book', ...view });
 })();

@@ -68,32 +68,65 @@
   const itemsLine = (o) => (o.items || []).map((i) => i.name + (i.qty > 1 ? ' ×' + i.qty : '')).join(', ');
   const byId = (id) => state.orders.find((o) => o.id === id);
 
-  // ---------- Каркас ----------
+  // ---------- Значки (линейные, в духе SF Symbols) ----------
+  const ICONS = {
+    tray: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    people: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+    badge: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
+    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/>',
+    trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    sidebar: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
+    site: '<path d="M7 17 17 7M8 7h9v9"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+    chevron: '<path d="m9 18 6-6-6-6"/>'
+  };
+  const icon = (name) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
+  const ROLE_TEXT = { manager: 'Управляющий', admin: 'Администратор', cook: 'Повар' };
+  const TITLES = { board: 'Заказы', history: 'Архив', clients: 'Клиенты' };
+
+  // ---------- Каркас: боковая панель + рабочая область ----------
   root.innerHTML = `
     <div class="crm">
-      <header class="crm-top">
-        <div class="crm-brand"><span class="crm-mark">Р</span><b>РОЛЛЕВИЧ</b><span class="crm-sub">CRM</span></div>
-        <nav class="crm-tabs" role="tablist">
-          <button type="button" data-view="board" role="tab">Заказы <span class="crm-count" data-new-count hidden></span></button>
-          <button type="button" data-view="history" role="tab">Архив</button>
-          <button type="button" data-view="clients" role="tab">Клиенты</button>
+      <aside class="crm-side" data-side>
+        <div class="crm-brand"><span class="crm-mark">Р</span><span><b>РОЛЛЕВИЧ</b><small>CRM</small></span></div>
+        <nav class="crm-tabs crm-nav" role="tablist" aria-label="Разделы">
+          <div class="crm-nav__group" data-group="Продажи">
+            <p class="crm-nav__label">Продажи</p>
+            <button type="button" data-view="board" role="tab">${icon('tray')}<span>Заказы</span><span class="crm-count" data-new-count hidden></span></button>
+            <button type="button" data-view="history" role="tab">${icon('clock')}<span>Архив</span></button>
+            <button type="button" data-view="clients" role="tab">${icon('people')}<span>Клиенты</span></button>
+          </div>
         </nav>
-        <div class="crm-tools">
-          <label class="crm-search"><input id="crm-search" type="search" placeholder="№, имя или телефон" data-q></label>
-          <button type="button" class="crm-btn crm-btn--ghost" data-sound aria-pressed="false">Звук</button>
-          <button type="button" class="crm-btn" data-compose-open>+ Новый заказ</button>
-          <a class="crm-btn crm-btn--ghost" data-to-site href="#">На сайт</a>
-          <span class="crm-ext-status" data-ext-status></span>
-          <span class="crm-user" data-user hidden></span>
+        <div class="crm-side__foot">
+          <button type="button" class="crm-switch" data-sound role="switch" aria-checked="false"><span>Звук новых заказов</span><i aria-hidden="true"></i></button>
+          <div class="crm-user" data-user hidden></div>
         </div>
-      </header>
-      <div class="crm-status" data-conn></div>
-      <section class="crm-stats" data-stats></section>
-      <main class="crm-main" data-main></main>
+      </aside>
+      <div class="crm-shade" data-side-close hidden></div>
+      <div class="crm-content">
+        <header class="crm-top">
+          <button type="button" class="crm-icon-btn crm-menu" data-side-open aria-label="Разделы">${icon('sidebar')}</button>
+          <div class="crm-heading">
+            <h1 data-title>Заказы</h1>
+            <p class="crm-status" data-conn></p>
+          </div>
+          <div class="crm-tools">
+            <label class="crm-search">${icon('search')}<input id="crm-search" type="search" placeholder="Поиск: №, имя, телефон" data-q></label>
+            <button type="button" class="crm-btn" data-compose-open>${icon('plus')}<span>Новый заказ</span></button>
+          </div>
+        </header>
+        <section class="crm-stats" data-stats></section>
+        <main class="crm-main" data-main></main>
+      </div>
       <div class="crm-overlay" data-overlay hidden></div>
       <aside class="crm-drawer" data-drawer aria-hidden="true"></aside>
       <div class="crm-compose" data-compose hidden></div>
-      <div class="crm-toast" data-toast></div>
+      <div class="crm-toast" data-toast role="status"></div>
     </div>`;
   const $ = (s) => root.querySelector(s);
 
@@ -106,10 +139,9 @@
     const waiting = state.orders.filter((o) => o.status === 'new');
     const oldest = waiting.length ? Math.max(...waiting.map((o) => Date.now() - o.createdAt)) : 0;
     $('[data-stats]').innerHTML = `
-      <div class="stat"><span>Заказов сегодня</span><b>${today.length}</b></div>
+      <div class="stat"><span>Заказов сегодня</span><b>${today.length}</b>${active.length ? `<em class="muted">в работе ${active.length}</em>` : ''}</div>
       <div class="stat"><span>Выручка сегодня</span><b>${rub(revenue)}</b></div>
       <div class="stat"><span>Средний чек</span><b>${paid.length ? rub(revenue / paid.length) : '—'}</b></div>
-      <div class="stat"><span>В работе</span><b>${active.length}</b></div>
       <div class="stat ${oldest > 5 * 60000 ? 'stat--alert' : ''}"><span>Ждут ответа</span><b>${waiting.length}</b>${waiting.length ? `<em>дольше всех ${ago(Date.now() - oldest)}</em>` : ''}</div>`;
     const c = $('[data-new-count]');
     c.hidden = !waiting.length;
@@ -154,7 +186,7 @@
       if (sid !== 'done') items = items.slice().sort((a, b) => a.createdAt - b.createdAt);
       return `
         <section class="col col--${sid}">
-          <h3>${STATUS[sid].title}${sid === 'done' ? ' сегодня' : ''} <span>${items.length}</span></h3>
+          <h3 title="${sid === 'done' ? 'Выполнены сегодня' : ''}">${STATUS[sid].title} <span>${items.length}</span></h3>
           <div class="col__list">${items.map(card).join('') || '<p class="col__empty">Пусто</p>'}</div>
         </section>`;
     }).join('');
@@ -263,7 +295,7 @@
       <div class="dr-body">
         <div class="dr-block">
           <div class="kv"><span>Клиент</span><b>${esc(o.name)}</b></div>
-          ${o.stockMissing && o.stockMissing.length ? `<div class="kv kv--note"><span>Склад</span><b>Не списано — нет техкарты: ${esc(o.stockMissing.join(', '))}</b></div>` : ''}
+          ${o.stockMissing && o.stockMissing.length && isManager() ? `<div class="kv kv--note"><span>Склад</span><b>Не списано — нет техкарты: ${esc(o.stockMissing.join(', '))}</b></div>` : ''}
           <div class="kv"><span>Откуда</span><b>${o.source === 'phone' ? 'Телефон' + (o.createdBy ? ' · принял ' + esc(o.createdBy) : '') : 'Сайт'}</b></div>
           <div class="kv"><span>Телефон</span><b class="sel">${esc(o.phone)}</b><button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-copy="${esc(o.phone)}">Копировать</button></div>
           <div class="kv"><span>${o.method === 'pickup' ? 'Получение' : 'Адрес'}</span><b>${o.method === 'pickup' ? 'Самовывоз' : esc(o.address)}</b></div>
@@ -326,10 +358,13 @@
     delete $('[data-main]').dataset.ext;
     $('[data-main]').innerHTML = `
       <form class="crm-login" data-login novalidate>
-        <h2>Вход в CRM</h2>
-        <p>Для сотрудников РОЛЛЕВИЧ. Логин и пароль выдаёт администратор.</p>
-        <label><span>Логин</span><input id="crm-login" name="login" autocomplete="username" required></label>
-        <label><span>Пароль</span><input id="crm-password" name="password" type="password" autocomplete="current-password" required></label>
+        <span class="crm-mark crm-mark--big">Р</span>
+        <h2>РОЛЛЕВИЧ</h2>
+        <p>Вход для сотрудников</p>
+        <div class="crm-login__fields">
+          <label><span class="sr">Логин</span><input id="crm-login" name="login" placeholder="Логин" autocomplete="username" autocapitalize="none" required></label>
+          <label><span class="sr">Пароль</span><input id="crm-password" name="password" type="password" placeholder="Пароль" autocomplete="current-password" required></label>
+        </div>
         <p class="crm-login__err" data-login-err>${esc(state.loginError)}</p>
         <button type="submit" class="crm-btn crm-btn--block">Войти</button>
       </form>`;
@@ -340,14 +375,26 @@
   // повар входит в CRM только ради техкарт: без заказов, денег и клиентов
   const isCook = () => !!state.user && state.user.role === 'cook';
 
+  const isManager = () => !!state.user && state.user.role === 'manager';
+  // раздел виден: работает на этом сервере, повару — только кухня, управляющему — ещё и склад
+  const allowed = (v) => v.available(state.kind) && (!isCook() || v.cook) && (!v.manager || isManager());
+
   function render() {
+    const crm = root.querySelector('.crm');
+    crm.classList.toggle('is-login', state.needLogin);
     const userEl = $('[data-user]');
     userEl.hidden = !state.user;
-    if (state.user) userEl.innerHTML = `${esc(state.user.name)} <button type="button" class="crm-btn crm-btn--small crm-btn--ghost" data-logout>Выйти</button>`;
-    root.querySelector('.crm-tabs').hidden = state.needLogin;
-    $('[data-q]').closest('.crm-search').hidden = state.needLogin;
+    if (state.user) {
+      const initials = state.user.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+      userEl.innerHTML = `
+        <span class="crm-avatar">${esc(initials)}</span>
+        <span class="crm-user__who"><b>${esc(state.user.name)}</b><small>${esc(ROLE_TEXT[state.user.role] || '')}</small></span>
+        <a class="crm-icon-btn" data-to-site href="#" title="Открыть сайт" aria-label="Открыть сайт">${icon('site')}</a>
+        <button type="button" class="crm-icon-btn" data-logout title="Выйти" aria-label="Выйти">${icon('logout')}</button>`;
+    }
     if (state.needLogin) {
-      $('[data-conn]').innerHTML = '<span class="dot"></span>Сервер заказов';
+      $('[data-title]').textContent = '';
+      $('[data-conn]').innerHTML = '';
       renderLogin();
       renderDrawer();
       document.title = 'Вход · CRM РОЛЛЕВИЧ';
@@ -356,28 +403,27 @@
     const cook = isCook();
     if (cook && !(extraViews[state.view] && extraViews[state.view].cook)) state.view = Object.keys(extraViews).find((k) => extraViews[k].cook) || state.view;
     root.querySelectorAll('.crm-tabs [data-view]:not([data-ext-tab])').forEach((b) => { b.hidden = cook; });
-    $('[data-compose-open]').hidden = cook;
-    $('[data-sound]').hidden = cook;
-    $('[data-q]').closest('.crm-search').hidden = cook;
-    root.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === state.view)));
-    const btn = $('[data-sound]');
-    btn.setAttribute('aria-pressed', String(state.sound));
-    btn.textContent = state.sound ? 'Звук включён' : 'Звук выключен';
-    $('[data-conn]').innerHTML = state.error
-      ? `<span class="dot dot--err"></span>${esc(state.error)}`
-      : cook ? '<span class="dot dot--ok"></span>Техкарты блюд: состав, граммовка, технология'
-      : state.kind === 'db' || state.kind === 'api'
-        ? '<span class="dot dot--ok"></span>Онлайн: заказы с сайта приходят сюда в реальном времени'
-        : state.kind === 'local'
-          ? '<span class="dot dot--warn"></span>Локальный режим: видны только заказы, оформленные в этом браузере'
-          : '<span class="dot"></span>Подключаемся…';
-    const allowed = (v) => v.available(state.kind) && (!cook || v.cook);
     root.querySelectorAll('[data-ext-tab]').forEach((b) => { b.hidden = !allowed(extraViews[b.dataset.view]); });
     if (extraViews[state.view] && !allowed(extraViews[state.view])) state.view = 'board';
-    $('[data-stats]').hidden = !!extraViews[state.view];
-    $('[data-ext-status]').hidden = state.needLogin || cook;
-    if (!cook) Object.values(extraViews).forEach((v) => v.status && v.status($('[data-ext-status]'), state.kind));
-    if (extraViews[state.view]) { extraViews[state.view].render($('[data-main]')); renderDrawer(); return; }
+    // подписи групп прячем, если в группе не осталось видимых разделов
+    root.querySelectorAll('.crm-nav__group').forEach((g) => { g.hidden = ![...g.querySelectorAll('[data-view]')].some((b) => !b.hidden); });
+    root.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === state.view)));
+    const ext = extraViews[state.view];
+    $('[data-sound]').hidden = cook;
+    $('[data-sound]').setAttribute('aria-checked', String(state.sound));
+    $('.crm-tools').hidden = cook || !!ext;
+    $('[data-title]').textContent = ext ? ext.title : TITLES[state.view];
+    $('[data-conn]').innerHTML = state.error
+      ? `<span class="dot dot--err"></span>${esc(state.error)}`
+      : ext ? esc(ext.subtitle ? ext.subtitle() : '')
+      : state.kind === 'db' || state.kind === 'api'
+        ? '<span class="dot dot--ok"></span>Онлайн — новые заказы появляются сами'
+        : state.kind === 'local'
+          ? '<span class="dot dot--warn"></span>Локальный режим: видны только заказы из этого браузера'
+          : '<span class="dot"></span>Подключаемся…';
+    $('[data-stats]').hidden = !!ext;
+    if (!cook) Object.values(extraViews).forEach((v) => v.status && v.status(null, state.kind));
+    if (ext) { ext.render($('[data-main]')); renderDrawer(); return; }
     delete $('[data-main]').dataset.ext;
     renderStats();
     if (state.view === 'board') renderBoard();
@@ -386,6 +432,11 @@
     renderDrawer();
     const n = state.orders.filter((o) => o.status === 'new').length;
     if (isCrmRoute()) document.title = (n ? `(${n}) ` : '') + 'CRM · РОЛЛЕВИЧ';
+  }
+
+  function setSide(open) {
+    root.querySelector('.crm').classList.toggle('is-side-open', open);
+    $('[data-side-close]').hidden = !open;
   }
 
   // ---------- Действия ----------
@@ -734,9 +785,11 @@
 
   // ---------- События ----------
   root.addEventListener('click', (e) => {
-    const t = e.target.closest('button, a, [data-open], [data-client], [data-overlay]');
+    const t = e.target.closest('button, a, [data-open], [data-client], [data-overlay], [data-side-close]');
     if (!t) return;
-    if (t.dataset.view) { state.view = t.dataset.view; render(); return; }
+    if (t.dataset.view) { state.view = t.dataset.view; setSide(false); render(); window.scrollTo(0, 0); return; }
+    if (t.hasAttribute('data-side-open')) { setSide(true); return; }
+    if (t.hasAttribute('data-side-close')) { setSide(false); return; }
     if (t.dataset.advance) { e.stopPropagation(); advance(t.dataset.advance); return; }
     if (t.dataset.cancel) { state.confirmCancel = true; renderDrawer(); return; }
     if (t.hasAttribute('data-cancel-no')) { state.confirmCancel = false; renderDrawer(); return; }
@@ -775,9 +828,11 @@
     if (t.dataset.client) { state.openClient = t.dataset.client; state.openId = null; renderDrawer(); return; }
     if (t.dataset.open) { state.openId = t.dataset.open; state.openClient = null; state.confirmCancel = false; state.fresh.delete(t.dataset.open); render(); }
   });
-  root.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', (e) => {
+    if (!isCrmRoute()) return;
     if (e.key === 'Escape') {
       if (draft) { closeCompose(); return; }
+      setSide(false);
       state.openId = null; state.openClient = null; renderDrawer();
     }
     if (e.key === 'Enter' && e.target.matches('[data-open], [data-client]')) e.target.click();
@@ -816,21 +871,45 @@
   // ---------- Дополнительные вкладки (касса и смены — crm-shifts.js) ----------
   const extraViews = {};
   window.RollevichCRM = {
+    // view.group — подпись группы в боковой панели, view.icon — значок, view.subtitle() — строка под заголовком
     addView(id, title, view) {
-      extraViews[id] = { available: () => true, ...view };
+      extraViews[id] = { available: () => true, title, ...view };
+      const groupName = view.group || 'Ещё';
+      let group = root.querySelector(`.crm-nav__group[data-group="${groupName}"]`);
+      if (!group) {
+        group = document.createElement('div');
+        group.className = 'crm-nav__group';
+        group.dataset.group = groupName;
+        group.innerHTML = `<p class="crm-nav__label">${esc(groupName)}</p>`;
+        root.querySelector('.crm-tabs').appendChild(group);
+      }
       const b = document.createElement('button');
       b.type = 'button';
       b.dataset.view = id;
       b.dataset.extTab = '';
       b.setAttribute('role', 'tab');
-      b.textContent = title;
-      root.querySelector('.crm-tabs').appendChild(b);
+      b.innerHTML = `${icon(view.icon)}<span>${esc(title)}</span><span class="crm-nav__badge" data-badge></span>`;
+      group.appendChild(b);
       if (isCrmRoute()) render();
     },
+    // короткая подпись справа от раздела в боковой панели: «открыта», «3»
+    badge(id, text, tone) {
+      const b = root.querySelector(`[data-view="${id}"] [data-badge]`);
+      if (!b) return;
+      b.textContent = text || '';
+      b.className = 'crm-nav__badge' + (tone ? ' crm-nav__badge--' + tone : '');
+    },
+    // обновить заголовок и подпись активного раздела без перерисовки
+    head() {
+      const v = extraViews[state.view];
+      if (v && !state.needLogin && !state.error) $('[data-conn]').textContent = v.subtitle ? v.subtitle() : '';
+    },
     user: () => state.user,
+    isManager,
     isActive: (id) => isCrmRoute() && state.view === id && !state.needLogin,
     render: () => { if (isCrmRoute()) render(); },
     toast,
+    icon,
     h: { esc, rub, hhmm, dateShort, plural, ago, pad }
   };
 

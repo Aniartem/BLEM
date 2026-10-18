@@ -71,6 +71,7 @@ function wrap(db) {
     listUsers: db.prepare('SELECT id, login, name, role, created_at FROM users ORDER BY id'),
     insertUser: db.prepare('INSERT INTO users (login, name, pass_hash, created_at, role) VALUES (?, ?, ?, ?, ?)'),
     setPass: db.prepare('UPDATE users SET pass_hash = ? WHERE login = ?'),
+    setRole: db.prepare('UPDATE users SET role = ? WHERE login = ?'),
     deleteUser: db.prepare('DELETE FROM users WHERE login = ?'),
 
     insertSession: db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)'),
@@ -128,6 +129,7 @@ function wrap(db) {
       return r.changes > 0;
     },
     removeUser: (login) => q.deleteUser.run(login).changes > 0,
+    setRole: (login, role) => q.setRole.run(role, login).changes > 0,
 
     addSession: (tokenHash, userId, expiresAt) => q.insertSession.run(tokenHash, userId, expiresAt),
     sessionUser: (tokenHash) => q.sessionUser.get(tokenHash, Date.now()),

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { createApp } = require('../server');
 const { hashPassword } = require('../auth');
 
-let app, base, admin, cook;
+let app, base, boss, cook, adm;
 const silent = { log() {}, error() {} };
 const api = (method, path, body, cookie) => fetch(base + path, {
   method,
@@ -18,18 +18,20 @@ async function login(l, p) {
   return r.headers.get('set-cookie').split(';')[0];
 }
 let P; // название сырья → id
-const qtyOf = async (name) => (await json(await api('GET', '/api/staff/stock', null, admin))).products.find((p) => p.name === name).qty;
+const qtyOf = async (name) => (await json(await api('GET', '/api/staff/stock', null, boss))).products.find((p) => p.name === name).qty;
 
 before(async () => {
   app = createApp({ port: 0, host: '127.0.0.1', dbFile: ':memory:', publicUrl: '', secureCookies: false, trustProxy: false, timeZone: 'Europe/Samara', telegram: { token: '', chatIds: [] } }, { log: silent });
   base = `http://127.0.0.1:${(await app.start()).port}`;
-  app.db.addUser('anna', 'Анна', hashPassword('anna-pass-1'), 'admin');
+  app.db.addUser('anna', 'Анна', hashPassword('anna-pass-1'), 'manager');
+  app.db.addUser('olga', 'Ольга', hashPassword('olga-pass-1'), 'admin');
   app.db.addUser('chef', 'Шеф Игорь', hashPassword('chef-pass-1'), 'cook');
-  admin = await login('anna', 'anna-pass-1');
+  boss = await login('anna', 'anna-pass-1');
   cook = await login('chef', 'chef-pass-1');
+  adm = await login('olga', 'olga-pass-1');
   // склад: типовой список и приход по известным ценам
-  await api('POST', '/api/staff/stock/starter', null, admin);
-  const s = await json(await api('GET', '/api/staff/stock', null, admin));
+  await api('POST', '/api/staff/stock/starter', null, boss);
+  const s = await json(await api('GET', '/api/staff/stock', null, boss));
   P = Object.fromEntries(s.products.map((p) => [p.name, p.id]));
   await api('POST', '/api/staff/stock/receipts', {
     supplier: 'РыбТорг', lines: [
@@ -40,9 +42,24 @@ before(async () => {
       { productId: P['Огурцы'], qty: 3, price: 150 },
       { productId: P['Снежный краб'], qty: 2, price: 900 }
     ]
-  }, admin);
+  }, boss);
 });
 after(() => app.stop());
+
+test('администратор: заказы и касса есть, склада и себестоимости нет', async () => {
+  assert.equal((await api('GET', '/api/orders', null, adm)).status, 200);
+  assert.equal((await api('GET', '/api/staff/cash', null, adm)).status, 200);
+  for (const path of ['/api/staff/stock', '/api/staff/stock/docs?kind=writeoff']) {
+    const r = await json(await api('GET', path, null, adm));
+    assert.equal(r.status, 403, path);
+    assert.match(r.error, /управляющему/);
+  }
+  assert.equal((await api('POST', '/api/staff/stock/writeoffs', { reason: 'Порча', lines: [] }, adm)).status, 403);
+  const list = await json(await api('GET', '/api/staff/techcards', null, adm));
+  assert.equal(list.status, 200);
+  assert.equal(list.products[0].avgPrice, undefined);
+  assert.equal(list.dishes[0].cost, undefined);
+});
 
 test('повар видит только техкарты и без денег', async () => {
   const me = await json(await api('GET', '/api/me', null, cook));
@@ -74,7 +91,7 @@ test('повар заполняет техкарту, администратор
   };
   assert.equal((await api('PUT', '/api/staff/techcards/philadelphia-with-cucumber', card, cook)).status, 200);
 
-  const adm = await json(await api('GET', '/api/staff/techcards', null, admin));
+  const adm = await json(await api('GET', '/api/staff/techcards', null, boss));
   const d = adm.dishes.find((x) => x.id === 'philadelphia-with-cucumber');
   const cost = 0.12 * 200 + 0.5 * 6 + 0.08 * 1600 + 0.05 * 800 + 0.03 * 150; // 199,5 ₽
   assert.equal(d.cost, cost);
@@ -100,7 +117,7 @@ test('сеты собираются из других блюд, замкнуты
     ]
   }, cook);
   assert.equal(r.status, 200);
-  const adm = await json(await api('GET', '/api/staff/techcards', null, admin));
+  const adm = await json(await api('GET', '/api/staff/techcards', null, boss));
   const set = adm.dishes.find((x) => x.id === 'trio-set-24-pcs');
   const phila = adm.dishes.find((x) => x.id === 'philadelphia-with-cucumber').cost;
   const cali = adm.dishes.find((x) => x.id === 'california').cost;
@@ -127,19 +144,19 @@ test('заказ на кухне — сырьё списывается по те
     name: 'Ольга', phone: '+79120001234', method: 'delivery', address: 'ул. Ленина, 1',
     items: [{ id: 'philadelphia-with-cucumber', qty: 2 }, { id: 'trio-set-24-pcs', qty: 1 }]
   }));
-  await api('PATCH', `/api/orders/${r.id}`, { status: 'accepted' }, admin);
+  await api('PATCH', `/api/orders/${r.id}`, { status: 'accepted' }, boss);
   assert.equal(await qtyOf('Лосось охлаждённый'), salmon0); // принят — ещё не готовят
-  const res = await json(await api('PATCH', `/api/orders/${r.id}`, { status: 'cooking' }, admin));
+  const res = await json(await api('PATCH', `/api/orders/${r.id}`, { status: 'cooking' }, boss));
   // 2 Филадельфии + 1 в сете = 3 × 0,08 кг лосося; рис: 3 × 0,12 + Калифорния 0,12
   assert.equal(await qtyOf('Лосось охлаждённый'), Math.round((salmon0 - 0.24) * 1000) / 1000);
   assert.equal(await qtyOf('Рис для суши'), Math.round((rice0 - 0.48) * 1000) / 1000);
   assert.equal(res.order.stockDeducted, true);
   assert.deepEqual(res.order.stockMissing, ['Тори']);
 
-  await api('PATCH', `/api/orders/${r.id}`, { status: 'done' }, admin);
+  await api('PATCH', `/api/orders/${r.id}`, { status: 'done' }, boss);
   assert.equal(await qtyOf('Лосось охлаждённый'), Math.round((salmon0 - 0.24) * 1000) / 1000); // второй раз не списывается
 
-  const sales = await json(await api('GET', '/api/staff/stock/docs?kind=sale', null, admin));
+  const sales = await json(await api('GET', '/api/staff/stock/docs?kind=sale', null, boss));
   assert.equal(sales.docs.length, 1);
   assert.match(sales.docs[0].reason, /Заказ № \d+/);
 });
@@ -149,6 +166,6 @@ test('заказ, отменённый до кухни, сырьё не трат
   const r = await json(await api('POST', '/api/orders', {
     name: 'Пётр', phone: '+79120005678', method: 'pickup', items: [{ id: 'philadelphia-with-cucumber', qty: 3 }]
   }));
-  await api('PATCH', `/api/orders/${r.id}`, { status: 'cancelled' }, admin);
+  await api('PATCH', `/api/orders/${r.id}`, { status: 'cancelled' }, boss);
   assert.equal(await qtyOf('Лосось охлаждённый'), salmon0);
 });

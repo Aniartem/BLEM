@@ -56,15 +56,15 @@
     CRM.render();
   }
 
-  // ---------- Статус в шапке ----------
+  // ---------- Состояние в боковой панели: «Касса · открыта», «Смены · 3» ----------
   function status(el, kind) {
-    if (kind !== 'api' || !CRM.user()) { el.innerHTML = ''; S.loaded = false; return; }
+    if (kind !== 'api' || !CRM.user()) { CRM.badge('cash', ''); CRM.badge('shifts', ''); S.loaded = false; return; }
     ensureLoaded();
-    const cur = S.cash && S.cash.current;
+    if (!S.cash) return;
+    const cur = S.cash.current;
     const n = S.timeclock ? S.timeclock.onShift.length : 0;
-    el.innerHTML = `
-      <span class="pill ${cur ? 'pill--done' : 'pill--cancelled'}" title="${cur ? 'Открыта с ' + esc(hhmm(cur.openedAt)) : ''}">${cur ? 'Касса открыта · ' + esc(cur.openedBy) : 'Касса закрыта'}</span>
-      <span class="pill pill--accepted">На смене: ${n}</span>`;
+    CRM.badge('cash', cur ? 'открыта' : 'закрыта', cur ? 'ok' : 'off');
+    CRM.badge('shifts', n ? String(n) : '', 'ok');
   }
 
   // =====================================================================
@@ -539,6 +539,6 @@
     if (CRM.isActive('cash')) { const el = document.querySelector('[data-cash-since]'); if (el && S.cash.current) el.textContent = sinceText(S.cash.current.openedAt); }
   }, 60000);
 
-  CRM.addView('cash', 'Касса', cashView);
-  CRM.addView('shifts', 'Смены', shiftsView);
+  CRM.addView('cash', 'Касса', { group: 'Деньги и люди', icon: 'cash', ...cashView });
+  CRM.addView('shifts', 'Смены', { group: 'Деньги и люди', icon: 'badge', ...shiftsView });
 })();

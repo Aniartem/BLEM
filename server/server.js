@@ -160,11 +160,18 @@ function createApp(cfg, { log = console } = {}) {
     try { return new URL(origin).host === req.headers.host; } catch (e) { return false; }
   }
 
-  // Вход администратора: заказы, деньги, склад, табель
+  // Вход администратора или управляющего: заказы, касса, табель
   function staff(req, res) {
     const user = auth.userFrom(req);
     if (!user) { send(res, 401, { error: 'Войдите в CRM' }); return null; }
-    if (user.role !== 'admin') { send(res, 403, { error: 'Этот раздел доступен только администратору' }); return null; }
+    if (user.role !== 'admin' && user.role !== 'manager') { send(res, 403, { error: 'Этот раздел доступен только администратору' }); return null; }
+    return user;
+  }
+  // Только управляющий: склад, списания, себестоимость
+  function manager(req, res) {
+    const user = auth.userFrom(req);
+    if (!user) { send(res, 401, { error: 'Войдите в CRM' }); return null; }
+    if (user.role !== 'manager') { send(res, 403, { error: 'Склад доступен только управляющему' }); return null; }
     return user;
   }
   // Вход повара или администратора: техкарты
@@ -254,7 +261,7 @@ function createApp(cfg, { log = console } = {}) {
   };
 
   const shiftRoutes = shifts.routes({ send, readJson, staff, sameOrigin });
-  const stockRoutes = stock.routes({ send, readJson, staff, sameOrigin });
+  const stockRoutes = stock.routes({ send, readJson, staff: manager, sameOrigin });
   const techRoutes = techcards.routes({ send, readJson, kitchen, sameOrigin });
   Object.assign(routes, shiftRoutes.exact, stockRoutes.exact, techRoutes.exact);
   const patternRoutes = [...shiftRoutes.pattern, ...stockRoutes.pattern, ...techRoutes.pattern];

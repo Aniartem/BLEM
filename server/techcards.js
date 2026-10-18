@@ -172,7 +172,7 @@ function createTechCards({ db, raw = db.raw, stock, getMenu, log = console }) {
       exact: {
         'GET /api/staff/techcards': (req, res) => {
           const user = kitchen(req, res);
-          if (user) send(res, 200, list(user.role === 'admin'));
+          if (user) send(res, 200, list(user.role === 'manager'));
         },
         'GET /api/public/weights': (req, res) => send(res, 200, { weights: weights() }, { 'Cache-Control': 'public, max-age=300' })
       },

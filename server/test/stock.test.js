@@ -45,7 +45,7 @@ before(async () => {
     telegram: { token: 'T', chatIds: ['1'], apiBase: `http://127.0.0.1:${fakeTg.address().port}` }
   }, { log: silent });
   base = `http://127.0.0.1:${(await app.start()).port}`;
-  app.db.addUser('anna', 'Анна', hashPassword('anna-pass-1'));
+  app.db.addUser('anna', 'Анна', hashPassword('anna-pass-1'), 'manager');
   const r = await api('POST', '/api/login', { login: 'anna', password: 'anna-pass-1' });
   cookie = r.headers.get('set-cookie').split(';')[0];
 });
