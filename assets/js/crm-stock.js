@@ -1,5 +1,6 @@
 /*
- * CRM РОЛЛЕВИЧ: вкладка «Склад» — остатки сырья, приход по накладным, списания, инвентаризация.
+ * CRM РОЛЛЕВИЧ: вкладки «Склад» (остатки сырья, приход по накладным, инвентаризация)
+ * и «Списание» (сырьё с указанием причины).
  * Работает только со своим сервером.
  */
 (function () {
@@ -12,7 +13,7 @@
 
   const S = {
     data: null,          // обзор: products, suppliers, units, categories, reasons, expiring, today
-    section: 'stock',    // stock | receipt | writeoff | inventory
+    section: 'stock',    // раздел «Склада»: stock | receipt | inventory
     q: '',
     cat: '',
     onlyLow: false,
@@ -30,6 +31,8 @@
   const dateText = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}.${m}.${y}`; };
   const byId = (id) => S.data.products.find((p) => p.id === Number(id));
   const STATUS = { ok: ['Норма', 'pill--done'], low: ['Заканчивается', 'pill--new'], out: ['Нет', 'pill--cancelled'], none: ['Не поступало', ''] };
+  // какой документ показывает вкладка: у «Списания» он один, у «Склада» — выбранный раздел
+  const kindOf = (el) => el.closest('[data-stock-root]').dataset.fixed || S.section;
   const needsOrder = (p) => p.active && p.min > 0 && (p.status === 'low' || p.status === 'out');
 
   async function load() {
@@ -39,7 +42,7 @@
     try { S.docs[kind] = (await api('GET', `/api/staff/stock/docs?kind=${kind}`)).docs; } catch (e) { S.docs[kind] = []; }
   }
 
-  // ---------- Вкладка ----------
+  // ---------- Вкладки ----------
   const view = {
     available: (kind) => kind === 'api',
     render(main) {
@@ -50,7 +53,18 @@
     }
   };
 
-  const SECTIONS = [['stock', 'Остатки'], ['receipt', 'Приход'], ['writeoff', 'Списание'], ['inventory', 'Инвентаризация']];
+  const writeoffView = {
+    available: (kind) => kind === 'api',
+    render(main) {
+      if (main.dataset.ext === 'writeoff') return;
+      main.dataset.ext = 'writeoff';
+      S.openDoc = null;
+      main.innerHTML = '<div class="ext" data-stock-root data-fixed="writeoff"><p class="crm-note">Загружаем…</p></div>';
+      load().then(() => mountWriteoff(main));
+    }
+  };
+
+  const SECTIONS = [['stock', 'Остатки'], ['receipt', 'Приход'], ['inventory', 'Инвентаризация']];
 
   function mount(main) {
     const box = main.querySelector('[data-stock-root]');
@@ -64,10 +78,48 @@
     renderSection(box);
   }
 
+  function mountWriteoff(main) {
+    const box = main.querySelector('[data-stock-root]');
+    if (!box) return;
+    box.innerHTML = `
+      <section class="crm-stats ext-kpis ext-kpis--4" data-wo-kpis>${writeoffKpisHTML()}</section>
+      <div data-stock-alerts>${expiringHTML()}</div>
+      <div data-stock-section></div>`;
+    if (!box.dataset.bound) { bind(box); box.dataset.bound = '1'; }
+    renderSection(box);
+  }
+
   async function refresh(box) {
     await load();
-    box.querySelector('[data-stock-kpis]').innerHTML = kpisHTML();
-    box.querySelector('[data-stock-alerts]').innerHTML = alertsHTML();
+    const kpis = box.querySelector('[data-stock-kpis]');
+    if (kpis) kpis.innerHTML = kpisHTML();
+    box.querySelector('[data-stock-alerts]').innerHTML = box.dataset.fixed ? expiringHTML() : alertsHTML();
+  }
+
+  // итоги списаний за месяц: сумма и самые дорогие причины
+  function writeoffKpisHTML() {
+    const docs = S.docs.writeoff;
+    if (!docs) return '<div class="stat"><span>Списано за месяц</span><b>…</b></div>';
+    const total = docs.reduce((s, d) => s + d.total, 0);
+    const by = {};
+    docs.forEach((d) => { by[d.reason] = (by[d.reason] || 0) + d.total; });
+    S.data.reasons.forEach((r) => { if (!(r in by)) by[r] = 0; }); // пустые места — причинами без списаний
+    const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    return `
+      <div class="stat ${total ? 'stat--alert' : ''}"><span>Списано за месяц</span><b>${rub(total)}</b><em class="muted">документов: ${docs.length}</em></div>
+      ${top.map(([r, v]) => `<div class="stat"><span>${esc(r)}</span><b>${rub(v)}</b><em class="muted">${v ? Math.round(v / total * 100) + '% от списаний' : 'не было'}</em></div>`).join('')}`;
+  }
+
+  // на «Списании» напоминаем только о сроках — это частая причина
+  function expiringHTML() {
+    const exp = S.data.expiring;
+    if (!exp.length) return '';
+    return `
+      <div class="stock-alerts">
+        <div class="ext-card stock-alert"><h3>Срок годности</h3><ul>${exp.map((e) => `
+          <li class="${e.expired ? 'is-bad' : ''}"><b>${esc(e.name)}</b> — партия ${qtyText(e.qty)} ${esc(e.unit)} от ${dateText(e.received)}${e.supplier ? ', ' + esc(e.supplier) : ''}:
+          ${e.expired ? 'срок истёк ' : 'годен до '}${dateText(e.expiry)}</li>`).join('')}</ul></div>
+      </div>`;
   }
 
   function kpisHTML() {
@@ -98,12 +150,18 @@
 
   function renderSection(box) {
     const el = box.querySelector('[data-stock-section]');
-    box.querySelectorAll('[data-section]').forEach((b) => b.classList.toggle('is-on', b.dataset.section === S.section));
-    if (S.section === 'stock') el.innerHTML = stockHTML();
-    else el.innerHTML = docFormHTML(S.section) + `<h3 class="ext-h">${{ receipt: 'Накладные', writeoff: 'Списания', inventory: 'Инвентаризации' }[S.section]} за последний месяц</h3><div data-docs><p class="crm-note">Загружаем…</p></div>`;
-    if (S.section !== 'stock') {
+    const kind = kindOf(box);
+    box.querySelectorAll('[data-section]').forEach((b) => b.classList.toggle('is-on', b.dataset.section === kind));
+    if (kind === 'stock') el.innerHTML = stockHTML();
+    else el.innerHTML = docFormHTML(kind) + `<h3 class="ext-h">${{ receipt: 'Накладные', writeoff: 'Списания', inventory: 'Инвентаризации' }[kind]} за последний месяц</h3><div data-docs><p class="crm-note">Загружаем…</p></div>`;
+    if (kind !== 'stock') {
       initDocForm(box);
-      loadDocs(S.section).then(() => { const d = box.querySelector('[data-docs]'); if (d) d.innerHTML = docsHTML(S.section); });
+      loadDocs(kind).then(() => {
+        const d = box.querySelector('[data-docs]');
+        if (d) d.innerHTML = docsHTML(kind);
+        const k = box.querySelector('[data-wo-kpis]');
+        if (k) k.innerHTML = writeoffKpisHTML();
+      });
     }
   }
 
@@ -226,7 +284,7 @@
   }
 
   function docFormHTML(kind) {
-    if (!S.data.products.length) return '<p class="crm-note">Сначала заполните справочник сырья во вкладке «Остатки».</p>';
+    if (!S.data.products.length) return '<p class="crm-note">Сначала заполните справочник сырья: «Склад» → «Остатки».</p>';
     if (kind === 'inventory') return inventoryFormHTML();
     const receipt = kind === 'receipt';
     return `
@@ -312,7 +370,7 @@
 
   // пересчёт сумм в форме прихода или списания
   function updateDocForm(form) {
-    const kind = S.section;
+    const kind = kindOf(form);
     let total = 0;
     form.querySelectorAll('[data-line]').forEach((tr) => {
       const p = byId(tr.querySelector('[name="product"]').value);
@@ -366,7 +424,7 @@
   }
 
   async function submitDoc(box, form) {
-    const kind = S.section;
+    const kind = kindOf(box);
     const err = form.querySelector('[data-err]');
     const lines = [];
     const problems = [];
@@ -463,20 +521,20 @@
       if (t.hasAttribute('data-history-close')) { box.querySelector('[data-history-box]').innerHTML = ''; return; }
       if (t.hasAttribute('data-line-add')) {
         const body = box.querySelector('[data-lines]');
-        body.insertAdjacentHTML('beforeend', lineHTML(S.section));
+        body.insertAdjacentHTML('beforeend', lineHTML(kindOf(box)));
         body.lastElementChild.querySelector('select').focus();
         return;
       }
       if (t.hasAttribute('data-line-del')) {
         const body = box.querySelector('[data-lines]');
         if (body.children.length > 1) t.closest('tr').remove();
-        else body.innerHTML = lineHTML(S.section);
+        else body.innerHTML = lineHTML(kindOf(box));
         updateDocForm(box.querySelector('[data-doc-form]'));
         return;
       }
       if (t.dataset.doc) {
         S.openDoc = S.openDoc === Number(t.dataset.doc) ? null : Number(t.dataset.doc);
-        box.querySelector('[data-docs]').innerHTML = docsHTML(S.section);
+        box.querySelector('[data-docs]').innerHTML = docsHTML(kindOf(box));
       }
     });
     box.addEventListener('input', (e) => {
@@ -520,4 +578,5 @@
   }
 
   CRM.addView('stock', 'Склад', view);
+  CRM.addView('writeoff', 'Списание', writeoffView);
 })();
